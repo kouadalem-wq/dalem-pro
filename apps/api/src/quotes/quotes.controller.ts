@@ -17,6 +17,7 @@ import { CreateQuoteDto } from './dto/create-quote.dto';
 import { UpdateQuoteStatusDto } from './dto/update-quote-status.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { UpdateQuoteDto } from './dto/update-quote.dto';
 
 type AuthUser = { userId: string; tenantId: string; role: string };
 
@@ -53,6 +54,15 @@ export class QuotesController {
     @Body() dto: UpdateQuoteStatusDto,
   ) {
     const quote = await this.quotesService.updateStatus(user.tenantId, id, dto);
+    return { success: true, data: quote };
+  }
+  @Patch(':id')
+  async update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateQuoteDto,
+  ) {
+    const quote = await this.quotesService.update(user.tenantId, id, dto);
     return { success: true, data: quote };
   }
 
