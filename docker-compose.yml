@@ -1,0 +1,69 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dalem-pro-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dalem_user
+      POSTGRES_PASSWORD: dalem_dev_password
+      POSTGRES_DB: dalem_pro_dev
+      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dalem_user -d dalem_pro_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: dalem-pro-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: node:20-alpine
+    container_name: dalem-pro-api
+    working_dir: /app
+    command: sh -c "npm install -g pnpm > /dev/null 2>&1 && pnpm install --strict-peer-dependencies=false && pnpm run start:dev"
+    volumes:
+      - ./apps/api:/app
+      - api_node_modules:/app/node_modules
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: "postgresql://dalem_user:dalem_dev_password@postgres:5432/dalem_pro_dev"
+      REDIS_URL: "redis://redis:6379"
+      JWT_SECRET: "97c1329e3a9a64610fc7dc60faf13d61b2dc8bd2f13dbe7527572f8a43bdcf1b"
+      JWT_REFRESH_SECRET: "9bb208077956aff0e1c50d1f32675ec2c4799735f71ce31efbf50c3516672498"
+      PORT: 3001
+      NODE_ENV: development
+      FRONTEND_URL: "http://localhost:5173"
+      # Configuration SMTP — Resend (service email transactionnel)
+      SMTP_HOST: "smtp.resend.com"
+      SMTP_PORT: "465"
+      SMTP_USER: "resend"
+      SMTP_PASS: "re_L3wHewmv_2crypi4YXPJZ5DtMQHJAp3v2"
+      SMTP_FROM: "Dalem_Pro <onboarding@resend.dev>"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  api_node_modules:

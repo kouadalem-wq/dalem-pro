@@ -1,0 +1,311 @@
+// prisma/schema.prisma
+// Schéma de base de données Dalem_Pro
+// Architecture multi-tenant : chaque enregistrement porte un tenantId
+// Multi-devises : les montants sont stockés en centimes (entiers) avec leur devise
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TENANT (Entreprise cliente du SaaS)
+// Chaque PME qui s'inscrit sur Dalem_Pro est un Tenant
+// ─────────────────────────────────────────────────────────────────────────────
+enum PdfTemplate {
+  MODERN    // Bandeau vert, couleurs de marque, mise en page actuelle
+  CLASSIC   // Noir et blanc, police Times-Roman, sobre et traditionnel
+}
+
+model Tenant {
+  id          String      @id @default(uuid())
+  name        String                              // Nom de l'entreprise
+  slug        String      @unique                 // Ex: "boulangerie-mbaye" (URL-friendly)
+  email       String      @unique                 // Email de contact principal
+  phone       String?                             // Téléphone optionnel
+  address     String?                             // Adresse physique
+  logo        String?                             // URL du logo (S3/R2)
+  currency    String      @default("XOF")         // Devise par défaut (XOF = FCFA)
+  country     String      @default("CI")          // Pays (ISO 3166-1 alpha-2)
+  pdfTemplate PdfTemplate @default(MODERN)         // Template PDF choisi par l'entreprise
+  isActive    Boolean     @default(true)           // Compte actif ou suspendu
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  users       User[]
+  clients     Client[]
+  products    Product[]
+  quotes      Quote[]
+  invoices    Invoice[]
+  expenses    Expense[]
+
+  @@map("tenants")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USER (Utilisateur d'un Tenant)
+// Un Tenant peut avoir plusieurs utilisateurs (Owner + Employés)
+// ─────────────────────────────────────────────────────────────────────────────
+enum UserRole {
+  OWNER     // Propriétaire : accès total
+  EMPLOYEE  // Employé : accès limité (lecture + création, pas suppression)
+}
+
+model User {
+  id           String    @id @default(uuid())
+  tenantId     String                          // Clé multi-tenant
+  email        String    @unique
+  passwordHash String                          // Hash argon2, jamais le mot de passe brut
+  firstName    String
+  lastName     String
+  role         UserRole  @default(EMPLOYEE)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  resetToken       String?   @unique
+  resetTokenExpiry DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLIENT (Client d'un Tenant — pas un utilisateur du SaaS)
+// ─────────────────────────────────────────────────────────────────────────────
+model Client {
+  id        String    @id @default(uuid())
+  tenantId  String
+  name      String                            // Nom ou raison sociale
+  email     String?
+  phone     String?
+  address   String?
+  notes     String?                           // Notes internes
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  quotes    Quote[]
+  invoices  Invoice[]
+
+  @@index([tenantId])
+  @@map("clients")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRODUCT (Produit ou service d'un Tenant)
+// ─────────────────────────────────────────────────────────────────────────────
+enum ProductType {
+  PRODUCT   // Produit physique (avec gestion de stock)
+  SERVICE   // Service (pas de stock)
+}
+
+model Product {
+  id            String      @id @default(uuid())
+  tenantId      String
+  name          String
+  description   String?
+  type          ProductType @default(PRODUCT)
+  unitPrice     Int                             // Prix en centimes
+  currency      String      @default("XOF")
+  stockQuantity Int         @default(0)         // 0 pour les services
+  unit          String      @default("unité")   // Ex: kg, litre, unité, heure
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Relations
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  quoteLines    QuoteLine[]
+  invoiceLines  InvoiceLine[]
+
+  @@index([tenantId])
+  @@map("products")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QUOTE (Devis)
+// ─────────────────────────────────────────────────────────────────────────────
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model Quote {
+  id              String      @id @default(uuid())
+  tenantId        String
+  clientId        String
+  number          String
+  status          QuoteStatus @default(DRAFT)
+  currency        String      @default("XOF")
+  exchangeRateSnapshot Decimal? @db.Decimal(18, 6)
+  subtotalAmount  Int
+  taxAmount       Int         @default(0)
+  totalAmount     Int
+  taxRate         Decimal     @default(0) @db.Decimal(5, 2)
+  notes           String?
+  internalNotes   String?
+  validUntil      DateTime?
+  convertedToInvoiceId String? @unique
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client          Client      @relation(fields: [clientId], references: [id])
+  lines           QuoteLine[]
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@map("quotes")
+}
+
+model QuoteLine {
+  id          String   @id @default(uuid())
+  quoteId     String
+  productId   String?
+  description String
+  quantity    Decimal  @db.Decimal(10, 2)
+  unitPrice   Int
+  totalPrice  Int
+  createdAt   DateTime @default(now())
+
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product     Product? @relation(fields: [productId], references: [id])
+
+  @@index([quoteId])
+  @@map("quote_lines")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INVOICE (Facture)
+// ─────────────────────────────────────────────────────────────────────────────
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIAL
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model Invoice {
+  id              String        @id @default(uuid())
+  tenantId        String
+  clientId        String
+  number          String
+  status          InvoiceStatus @default(DRAFT)
+  currency        String        @default("XOF")
+  exchangeRateSnapshot Decimal? @db.Decimal(18, 6)
+  subtotalAmount  Int
+  taxAmount       Int           @default(0)
+  totalAmount     Int
+  paidAmount      Int           @default(0)
+  taxRate         Decimal       @default(0) @db.Decimal(5, 2)
+  notes           String?
+  internalNotes   String?
+  dueDate         DateTime?
+  paidAt          DateTime?
+  fromQuoteId     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client          Client        @relation(fields: [clientId], references: [id])
+  lines           InvoiceLine[]
+  payments        Payment[]
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  productId   String?
+  description String
+  quantity    Decimal  @db.Decimal(10, 2)
+  unitPrice   Int
+  totalPrice  Int
+  createdAt   DateTime @default(now())
+
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product     Product? @relation(fields: [productId], references: [id])
+
+  @@index([invoiceId])
+  @@map("invoice_lines")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYMENT
+// ─────────────────────────────────────────────────────────────────────────────
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  MOBILE_MONEY
+  CHEQUE
+  OTHER
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  invoiceId     String
+  amount        Int
+  currency      String        @default("XOF")
+  method        PaymentMethod @default(CASH)
+  reference     String?
+  notes         String?
+  paidAt        DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+
+  invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("payments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXPENSE
+// ─────────────────────────────────────────────────────────────────────────────
+enum ExpenseCategory {
+  SUPPLIES
+  RENT
+  SALARY
+  TRANSPORT
+  MARKETING
+  UTILITIES
+  TAXES
+  OTHER
+}
+
+model Expense {
+  id          String          @id @default(uuid())
+  tenantId    String
+  category    ExpenseCategory @default(OTHER)
+  description String
+  amount      Int
+  currency    String          @default("XOF")
+  receipt     String?
+  date        DateTime        @default(now())
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("expenses")
+}
