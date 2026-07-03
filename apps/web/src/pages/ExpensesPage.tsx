@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
+import { ScanReceiptButton } from '../components/ScanReceiptButton';
 import { formatMoney, formatDate } from '../lib/format';
 import { getErrorMessage } from '../lib/errors';
 import { useAuth } from '../context/AuthContext';
@@ -78,12 +79,15 @@ export function ExpensesPage() {
       title="Dépenses"
       subtitle={`${expenses.length} dépense${expenses.length > 1 ? 's' : ''} — ${formatMoney(total, currency)} au total`}
       action={
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="rounded-lg bg-ink-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-600"
-        >
-          {showForm ? 'Annuler' : '+ Nouvelle dépense'}
-        </button>
+        <div className="flex items-center gap-2">
+          <ScanReceiptButton />
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="rounded-lg bg-ink-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-600"
+          >
+            {showForm ? 'Annuler' : '+ Nouvelle dépense'}
+          </button>
+        </div>
       }
     >
       {showForm && (

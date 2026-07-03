@@ -6,6 +6,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ChatDto } from './dto/chat.dto';
 import { DraftQuoteDto } from './dto/draft-quote.dto';
 import { EditQuoteDto } from './dto/edit-quote.dto';
+import { ScanReceiptDto } from './dto/scan-receipt.dto';
 
 type AuthUser = { userId: string; tenantId: string; role: string };
 
@@ -40,12 +41,23 @@ export class AssistantController {
     );
     return { success: true, data: result };
   }
+
   @Post('reminder/:invoiceId')
   async reminder(
     @CurrentUser() user: AuthUser,
     @Param('invoiceId') invoiceId: string,
   ) {
     const result = await this.assistantService.reminder(user.tenantId, invoiceId);
+    return { success: true, data: result };
+  }
+
+  @Post('scan-receipt')
+  async scanReceipt(@CurrentUser() user: AuthUser, @Body() dto: ScanReceiptDto) {
+    const result = await this.assistantService.scanReceipt(
+      user.tenantId,
+      dto.imageBase64,
+      dto.mimeType,
+    );
     return { success: true, data: result };
   }
 }

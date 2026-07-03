@@ -525,6 +525,7 @@ Date du jour : ${new Date().toLocaleDateString('fr-CA')}`;
       reply: String(parsed?.reply ?? 'Voici la version mise a jour.').trim(),
     };
   }
+
   // Redige un message de relance personnalise pour une facture impayee,
   // adapte a l'historique de paiement du client et formate pour WhatsApp.
   async reminder(
@@ -594,7 +595,7 @@ CONTEXTE :
 - Historique du client : ${historyStats.totalInvoices} facture(s) au total, ${historyStats.paidInvoices} payee(s), ${historyStats.overdueInvoices} en retard
 
 REGLES :
--  ${channel === 'email' ? 'Message pour EMAIL : 4 a 8 phrases, legerement plus formel, en francais. Ne mets PAS de ligne "Objet:" dans le corps.' : 'Message COURT (3 a 6 phrases max), adapte a WhatsApp, en francais.'}.
+- ${channel === 'email' ? 'Message pour EMAIL : 4 a 8 phrases, legerement plus formel, en francais. Ne mets PAS de ligne "Objet:" dans le corps.' : 'Message COURT (3 a 6 phrases max), adapte a WhatsApp, en francais.'}
 - ADAPTE LE TON a la situation : retard leger ou bon historique -> cordial et leger ; retard important (30+ jours) ou client souvent en retard -> plus ferme mais toujours professionnel et respectueux. Jamais menacant ni insultant.
 - Mentionne le numero de facture et le montant restant du en ${label}.
 - Commence par une salutation avec le nom du client, termine par le nom de l'entreprise.
@@ -621,5 +622,156 @@ REGLES :
       message: message.trim(),
       subject: `Rappel de paiement - Facture ${invoice.number}${daysPart}`,
     };
+  }
+
+  // Appel a Gemini (vision) - utilise pour lire les images de recus
+  private async callGemini(
+    imageBase64: string,
+    mimeType: string,
+    prompt: string,
+  ): Promise<string> {
+    const apiKey = this.config.get<string>('GEMINI_API_KEY');
+    const model = this.config.get<string>('GEMINI_MODEL') || 'gemini-2.5-flash';
+
+    if (!apiKey) {
+      this.logger.error('GEMINI_API_KEY manquante dans le .env');
+      throw new ServiceUnavailableException(
+        "Le scan de recus n'est pas configure.",
+      );
+    }
+
+    const allowedMimeTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/heic',
+    ];
+    if (!allowedMimeTypes.includes(mimeType)) {
+      throw new BadRequestException(
+        "Format d'image non supporte. Utilise JPEG, PNG ou WebP.",
+      );
+    }
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  { inline_data: { mime_type: mimeType, data: imageBase64 } },
+                  { text: prompt },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: 0,
+              response_mime_type: 'application/json',
+            },
+          }),
+        },
+      );
+
+      if (response.status === 429) {
+        throw new HttpException(
+          'Le scan de recus est tres sollicite. Reessaie dans une minute.',
+          429,
+        );
+      }
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        this.logger.error(`Erreur Gemini ${response.status}: ${errorBody}`);
+        throw new ServiceUnavailableException(
+          'Le scan de recus est temporairement indisponible.',
+        );
+      }
+
+      const data = await response.json();
+      return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      this.logger.error(`Appel Gemini echoue: ${error.message}`);
+      throw new ServiceUnavailableException(
+        'Le scan de recus est temporairement indisponible.',
+      );
+    }
+  }
+
+  // Analyse la photo d'un recu et propose un brouillon de depense.
+  // L'utilisateur valide TOUJOURS avant creation (pattern maison).
+  async scanReceipt(
+    tenantId: string,
+    imageBase64: string,
+    mimeType: string,
+  ): Promise<{
+    draft: {
+      amount: number; // en centimes
+      description: string;
+      category: string;
+      date: string | null;
+      vendor: string | null;
+    };
+  }> {
+    const currency = await this.getTenantCurrency(tenantId);
+    const label = currencyLabel(currency);
+
+    const prompt = `Analyse cette image de recu, facture ou ticket de caisse. Reponds UNIQUEMENT avec un objet JSON valide, sans texte autour.
+
+FORMAT DE SORTIE JSON OBLIGATOIRE :
+{
+  "amount": <montant TOTAL paye, en CENTIMES (entier). Le montant lisible sur le recu est en ${label} : multiplie-le par 100>,
+  "vendor": "<nom du commercant/fournisseur, ou null si illisible>",
+  "description": "<description courte de l'achat (ex: Carburant station Total, Fournitures de bureau)>",
+  "category": "<une seule valeur parmi: SUPPLIES, RENT, SALARY, TRANSPORT, MARKETING, UTILITIES, TAXES, OTHER>",
+  "date": "<date du recu au format YYYY-MM-DD, ou null si illisible>"
+}
+
+REGLES :
+- Le montant est le TOTAL paye (TTC), pas un sous-total. Si plusieurs montants, prends le total final.
+- N'invente RIEN : si le montant est illisible, reponds {"error": "Montant illisible sur le recu"}.
+- Si l'image n'est pas un recu/facture/ticket, reponds {"error": "Cette image ne semble pas etre un recu"}.
+- Choisis la categorie la plus logique : carburant/taxi/transport -> TRANSPORT, electricite/eau/internet/telephone -> UTILITIES, loyer -> RENT, salaires -> SALARY, publicite -> MARKETING, impots/taxes -> TAXES, materiel/fournitures/marchandises -> SUPPLIES, sinon OTHER.`;
+
+    const raw = await this.callGemini(imageBase64, mimeType, prompt);
+    const parsed = this.parseJsonOrThrow(raw, 'Scan de recu');
+
+    if (parsed?.error) {
+      throw new BadRequestException(parsed.error);
+    }
+
+    const amount = Math.round(Number(parsed?.amount));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException(
+        "Je n'ai pas pu lire le montant sur ce recu. Reessaie avec une photo plus nette.",
+      );
+    }
+
+    const validCategories = [
+      'SUPPLIES',
+      'RENT',
+      'SALARY',
+      'TRANSPORT',
+      'MARKETING',
+      'UTILITIES',
+      'TAXES',
+      'OTHER',
+    ];
+    const category = validCategories.includes(parsed?.category)
+      ? parsed.category
+      : 'OTHER';
+
+    const rawDate = String(parsed?.date ?? '');
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : null;
+
+    const vendor = String(parsed?.vendor ?? '').trim() || null;
+    const description =
+      String(parsed?.description ?? '').trim() ||
+      (vendor ? `Achat chez ${vendor}` : 'Depense scannee');
+
+    return { draft: { amount, description, category, date, vendor } };
   }
 }
