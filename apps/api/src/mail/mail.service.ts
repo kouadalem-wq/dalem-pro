@@ -91,6 +91,30 @@ export class MailService {
     await this.send(params.clientEmail, `Rappel — Facture ${params.invoiceNumber} en retard de paiement`, html);
   }
 
+  // Rappel de retard rédigé par Dalem AI : le texte est fourni tel quel,
+  // on l'habille simplement dans le gabarit visuel maison.
+  async sendAiReminder(params: {
+    clientEmail: string;
+    tenantName: string;
+    subject: string;
+    message: string;
+  }): Promise<void> {
+    const paragraphs = params.message
+      .split(/\n+/)
+      .map((p) => `<p>${p.trim()}</p>`)
+      .join('\n');
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto;">
+        <h2 style="color: #0d9165;">Rappel de paiement</h2>
+        ${paragraphs}
+        <p style="color: #6b7280; font-size: 12px; margin-top: 30px;">
+          Ceci est un message automatique envoyé par Dalem_Pro au nom de ${params.tenantName}.
+        </p>
+      </div>
+    `;
+    await this.send(params.clientEmail, params.subject, html);
+  }
+
   // Email de facture/devis avec le PDF en pièce jointe
   async sendDocument(params: {
     clientEmail: string;

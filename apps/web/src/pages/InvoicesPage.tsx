@@ -1,9 +1,10 @@
 // src/pages/InvoicesPage.tsx
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
+import { ReminderButton } from '../components/ReminderButton';
 import {
   formatMoney,
   statusStyles,
@@ -121,8 +122,8 @@ export function InvoicesPage() {
                 const isPayable = invoice.status !== 'PAID' && invoice.status !== 'CANCELLED';
 
                 return (
-                  <>
-                  <tr key={invoice.id} className="border-t border-gray-50">
+                  <Fragment key={invoice.id}>
+                  <tr className="border-t border-gray-50">
                     <td className="px-5 py-3.5 font-medium text-ink-950">{invoice.number}</td>
                     <td className="px-5 py-3.5 text-gray-600">{invoice.client.name}</td>
                     <td className="px-5 py-3.5 text-gray-900">{formatMoney(invoice.totalAmount, currency)}</td>
@@ -142,6 +143,8 @@ export function InvoicesPage() {
                         >
                           <span aria-hidden>⬇</span> PDF
                         </button>
+
+                        <ReminderButton invoice={invoice} />
 
                         <button
                           onClick={() => handleSendWhatsApp(invoice)}
@@ -229,7 +232,7 @@ export function InvoicesPage() {
                       </td>
                     </tr>
                   )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

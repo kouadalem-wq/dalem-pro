@@ -79,11 +79,14 @@ export class AssistantService {
     options: { temperature?: number; jsonMode?: boolean } = {},
   ): Promise<string> {
     const apiKey = this.config.get<string>('GROQ_API_KEY');
-    const model = this.config.get<string>('GROQ_MODEL') || 'llama-3.3-70b-versatile';
+    const model =
+      this.config.get<string>('GROQ_MODEL') || 'llama-3.3-70b-versatile';
 
     if (!apiKey) {
       this.logger.error('GROQ_API_KEY manquante dans le .env');
-      throw new ServiceUnavailableException("L'assistant IA n'est pas configure.");
+      throw new ServiceUnavailableException(
+        "L'assistant IA n'est pas configure.",
+      );
     }
 
     try {
@@ -97,7 +100,9 @@ export class AssistantService {
           model,
           max_tokens: 1024,
           temperature: options.temperature ?? 0.3,
-          ...(options.jsonMode ? { response_format: { type: 'json_object' } } : {}),
+          ...(options.jsonMode
+            ? { response_format: { type: 'json_object' } }
+            : {}),
           messages,
         }),
       });
@@ -149,7 +154,8 @@ export class AssistantService {
   ): DraftLine[] {
     return (Array.isArray(rawLines) ? rawLines : [])
       .map((l: any) => ({
-        productId: l?.productId && validProductIds.has(l.productId) ? l.productId : null,
+        productId:
+          l?.productId && validProductIds.has(l.productId) ? l.productId : null,
         description: String(l?.description ?? '').trim(),
         quantity: Number(l?.quantity),
         unitPrice: Math.round(Number(l?.unitPrice)),
@@ -165,7 +171,11 @@ export class AssistantService {
       );
   }
 
-  async chat(tenantId: string, message: string, history: ChatMessageDto[] = []) {
+  async chat(
+    tenantId: string,
+    message: string,
+    history: ChatMessageDto[] = [],
+  ) {
     const [summary, currency] = await Promise.all([
       this.dashboardService.getSummary(tenantId),
       this.getTenantCurrency(tenantId),
@@ -201,7 +211,10 @@ Date du jour : ${new Date().toLocaleDateString('fr-CA')}`;
     return { reply: reply || "Desole, je n'ai pas pu generer de reponse." };
   }
 
-  async draftQuote(tenantId: string, text: string): Promise<{ draft: QuoteDraft }> {
+  async draftQuote(
+    tenantId: string,
+    text: string,
+  ): Promise<{ draft: QuoteDraft }> {
     const [clients, products, currency] = await Promise.all([
       this.prisma.client.findMany({
         where: { tenantId, isActive: true },
@@ -260,7 +273,9 @@ ${JSON.stringify(products)}`;
     const clientName = String(parsed?.client?.name ?? '').trim();
     const rawClientId = parsed?.client?.id ?? null;
     const validClientId =
-      rawClientId && clients.some((c) => c.id === rawClientId) ? rawClientId : null;
+      rawClientId && clients.some((c) => c.id === rawClientId)
+        ? rawClientId
+        : null;
 
     if (!clientName && !validClientId) {
       throw new BadRequestException(
@@ -279,7 +294,7 @@ ${JSON.stringify(products)}`;
 
     const resolvedName =
       validClientId != null
-        ? clients.find((c) => c.id === validClientId)?.name ?? clientName
+        ? (clients.find((c) => c.id === validClientId)?.name ?? clientName)
         : clientName;
 
     const taxRate = Number.isFinite(Number(parsed?.taxRate))
@@ -374,7 +389,7 @@ ${JSON.stringify(validDraft)}`
 
     const draftRule = validDraft
       ? "Un brouillon est en cours : pars du BROUILLON EN COURS et applique uniquement la nouvelle demande dessus. Si l'utilisateur demande d'annuler une modification precedente, retire-la du brouillon. Garde le meme quoteId sauf si l'utilisateur designe clairement un autre devis."
-      : "Identifie le devis vise par la demande (nom du client, numero, montant ou date). Utilise son quoteId EXACT.";
+      : 'Identifie le devis vise par la demande (nom du client, numero, montant ou date). Utilise son quoteId EXACT.';
 
     const systemPrompt = `Tu es Dalem AI et tu aides l'utilisateur a modifier un devis existant au fil d'une conversation. Tu reponds UNIQUEMENT avec un objet JSON valide, sans texte avant ou apres, sans backticks.
 
@@ -463,7 +478,10 @@ Date du jour : ${new Date().toLocaleDateString('fr-CA')}`;
       );
     }
 
-    const subtotal = lines.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0);
+    const subtotal = lines.reduce(
+      (sum, l) => sum + l.unitPrice * l.quantity,
+      0,
+    );
     if (subtotal < 0) {
       throw new BadRequestException(
         'La remise depasse le montant du devis. Ajuste la demande.',
@@ -505,6 +523,103 @@ Date du jour : ${new Date().toLocaleDateString('fr-CA')}`;
         taxRate,
       },
       reply: String(parsed?.reply ?? 'Voici la version mise a jour.').trim(),
+    };
+  }
+  // Redige un message de relance personnalise pour une facture impayee,
+  // adapte a l'historique de paiement du client et formate pour WhatsApp.
+  async reminder(
+    tenantId: string,
+    invoiceId: string,
+    channel: 'whatsapp' | 'email' = 'whatsapp',
+  ): Promise<{ message: string; subject: string }> {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id: invoiceId, tenantId },
+      include: { client: true },
+    });
+    if (!invoice) {
+      throw new BadRequestException('Facture introuvable.');
+    }
+    if (!['SENT', 'PARTIAL', 'OVERDUE'].includes(invoice.status)) {
+      throw new BadRequestException(
+        'Seule une facture envoyee, partielle ou en retard peut etre relancee.',
+      );
+    }
+
+    const [currency, tenant, clientInvoices] = await Promise.all([
+      this.getTenantCurrency(tenantId),
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { name: true },
+      }),
+      // Historique du client : pour adapter le ton de la relance
+      this.prisma.invoice.findMany({
+        where: { tenantId, clientId: invoice.clientId },
+        select: {
+          status: true,
+          dueDate: true,
+          totalAmount: true,
+          paidAmount: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+    ]);
+    const label = currencyLabel(currency);
+
+    const now = new Date();
+    const daysLate = invoice.dueDate
+      ? Math.max(
+          0,
+          Math.floor((now.getTime() - invoice.dueDate.getTime()) / 86400000),
+        )
+      : 0;
+    const amountDue = invoice.totalAmount - invoice.paidAmount;
+
+    const historyStats = {
+      totalInvoices: clientInvoices.length,
+      paidInvoices: clientInvoices.filter((i) => i.status === 'PAID').length,
+      overdueInvoices: clientInvoices.filter((i) => i.status === 'OVERDUE')
+        .length,
+    };
+
+    const systemPrompt = `Tu rediges un message de relance de paiement destine a etre envoye sur WhatsApp. Tu reponds UNIQUEMENT avec le texte du message, sans introduction, sans commentaire, sans guillemets autour.
+
+CONTEXTE :
+- Entreprise emettrice : ${tenant?.name ?? 'Notre entreprise'}
+- Client : ${invoice.client.name}
+- Facture : ${invoice.number}
+- Montant restant du : ${Math.round(amountDue / 100)} ${label} (montant deja converti, utilise-le tel quel)
+- Retard : ${daysLate} jour(s) ${invoice.dueDate ? '' : '(pas de date echeance definie)'}
+- Statut : ${invoice.status}
+- Historique du client : ${historyStats.totalInvoices} facture(s) au total, ${historyStats.paidInvoices} payee(s), ${historyStats.overdueInvoices} en retard
+
+REGLES :
+-  ${channel === 'email' ? 'Message pour EMAIL : 4 a 8 phrases, legerement plus formel, en francais. Ne mets PAS de ligne "Objet:" dans le corps.' : 'Message COURT (3 a 6 phrases max), adapte a WhatsApp, en francais.'}.
+- ADAPTE LE TON a la situation : retard leger ou bon historique -> cordial et leger ; retard important (30+ jours) ou client souvent en retard -> plus ferme mais toujours professionnel et respectueux. Jamais menacant ni insultant.
+- Mentionne le numero de facture et le montant restant du en ${label}.
+- Commence par une salutation avec le nom du client, termine par le nom de l'entreprise.
+- Propose de contacter l'entreprise en cas de question ou difficulte.
+- N'invente aucune information (pas de penalites, pas de dates limites non fournies).
+- Tu peux utiliser 1 ou 2 emojis sobres maximum si le ton est cordial, aucun si le ton est ferme.`;
+
+    const message = await this.callGroq(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: 'Redige le message de relance.' },
+      ],
+      { temperature: 0.4 },
+    );
+
+    if (!message.trim()) {
+      throw new ServiceUnavailableException(
+        "Je n'ai pas pu generer le message de relance. Reessaie.",
+      );
+    }
+
+    const daysPart = daysLate > 0 ? ` - ${daysLate} j de retard` : '';
+    return {
+      message: message.trim(),
+      subject: `Rappel de paiement - Facture ${invoice.number}${daysPart}`,
     };
   }
 }

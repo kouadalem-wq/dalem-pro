@@ -1,5 +1,5 @@
 ﻿// src/assistant/assistant.controller.ts
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { AssistantService } from './assistant.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -38,6 +38,14 @@ export class AssistantController {
       dto.history,
       dto.draft,
     );
+    return { success: true, data: result };
+  }
+  @Post('reminder/:invoiceId')
+  async reminder(
+    @CurrentUser() user: AuthUser,
+    @Param('invoiceId') invoiceId: string,
+  ) {
+    const result = await this.assistantService.reminder(user.tenantId, invoiceId);
     return { success: true, data: result };
   }
 }

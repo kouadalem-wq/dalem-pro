@@ -8,5 +8,6 @@ import { DashboardModule } from '../dashboard/dashboard.module';
   imports: [DashboardModule],
   controllers: [AssistantController],
   providers: [AssistantService],
+  exports: [AssistantService],
 })
 export class AssistantModule {}
