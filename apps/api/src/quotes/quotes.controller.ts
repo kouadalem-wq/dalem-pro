@@ -5,19 +5,21 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   UseGuards,
   Res,
+  ForbiddenException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { QuotesService } from './quotes.service';
 import { PdfService } from '../pdf/pdf.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
+import { UpdateQuoteDto } from './dto/update-quote.dto';
 import { UpdateQuoteStatusDto } from './dto/update-quote-status.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { UpdateQuoteDto } from './dto/update-quote.dto';
 
 type AuthUser = { userId: string; tenantId: string; role: string };
 
@@ -56,6 +58,7 @@ export class QuotesController {
     const quote = await this.quotesService.updateStatus(user.tenantId, id, dto);
     return { success: true, data: quote };
   }
+
   @Patch(':id')
   async update(
     @CurrentUser() user: AuthUser,
@@ -64,6 +67,17 @@ export class QuotesController {
   ) {
     const quote = await this.quotesService.update(user.tenantId, id, dto);
     return { success: true, data: quote };
+  }
+
+  @Delete(':id')
+  async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    if (user.role !== 'OWNER' && user.role !== 'ADMIN') {
+      throw new ForbiddenException(
+        'Seul un administrateur peut supprimer un devis.',
+      );
+    }
+    const result = await this.quotesService.remove(user.tenantId, id);
+    return { success: true, data: result };
   }
 
   @Post(':id/convert-to-invoice')

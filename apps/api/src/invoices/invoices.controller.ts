@@ -1,13 +1,14 @@
 // src/invoices/invoices.controller.ts
-
 import {
   Controller,
   Get,
   Post,
+  Delete,
   Param,
   UseGuards,
   Res,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { InvoicesService } from './invoices.service';
@@ -39,6 +40,17 @@ export class InvoicesController {
     return { success: true, data: invoice };
   }
 
+  @Delete(':id')
+  async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    if (user.role !== 'OWNER' && user.role !== 'ADMIN') {
+      throw new ForbiddenException(
+        'Seul un administrateur peut supprimer une facture.',
+      );
+    }
+    const result = await this.invoicesService.remove(user.tenantId, id);
+    return { success: true, data: result };
+  }
+
   @Get(':id/pdf')
   async downloadPdf(
     @CurrentUser() user: AuthUser,
@@ -47,7 +59,6 @@ export class InvoicesController {
   ) {
     const invoice = await this.invoicesService.findOne(user.tenantId, id);
     const pdfBuffer = await this.buildPdf(invoice);
-
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="${invoice.number}.pdf"`,
@@ -60,13 +71,10 @@ export class InvoicesController {
   @Post(':id/send-email')
   async sendByEmail(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const invoice = await this.invoicesService.findOne(user.tenantId, id);
-
     if (!invoice.client.email) {
       throw new BadRequestException("Ce client n'a pas d'adresse email enregistrée.");
     }
-
     const pdfBuffer = await this.buildPdf(invoice);
-
     await this.mailService.sendDocument({
       clientEmail: invoice.client.email,
       clientName: invoice.client.name,
@@ -76,7 +84,6 @@ export class InvoicesController {
       amount: this.formatMoney(invoice.totalAmount, invoice.currency),
       pdfBuffer,
     });
-
     return { success: true, message: `Facture envoyée à ${invoice.client.email}.` };
   }
 

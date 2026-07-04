@@ -1,9 +1,9 @@
 // src/pages/QuotesPage.tsx
-
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
+import { DeleteDocumentButton } from '../components/DeleteDocumentButton';
 import {
   formatMoney,
   statusStyles,
@@ -25,7 +25,6 @@ type Quote = {
 };
 
 type Client = { id: string; name: string };
-
 type QuoteLine = { description: string; quantity: number; unitPrice: number };
 
 // Prochaine action possible selon le statut actuel du devis
@@ -152,7 +151,6 @@ export function QuotesPage() {
 
   const quotes = quotesData?.data ?? [];
   const clients = clientsData?.data ?? [];
-
   const isClientValid = clientMode === 'existing' ? !!clientId : newClientName.trim().length > 0;
   const isLinesValid = lines.every((l) => l.description.trim() && l.quantity > 0 && l.unitPrice >= 0);
   const canSubmit = isClientValid && isLinesValid && !createQuote.isPending;
@@ -177,7 +175,6 @@ export function QuotesPage() {
               {getErrorMessage(createQuote.error)}
             </div>
           )}
-
           <div className="mb-4 flex gap-2">
             <button
               type="button"
@@ -198,7 +195,6 @@ export function QuotesPage() {
               Client existant
             </button>
           </div>
-
           {clientMode === 'new' ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
@@ -252,7 +248,6 @@ export function QuotesPage() {
               )}
             </div>
           )}
-
           <div className="mt-4">
             <label className="text-xs font-medium text-gray-600">Taux de taxe (%)</label>
             <input
@@ -264,10 +259,8 @@ export function QuotesPage() {
               className="mt-1.5 w-32 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
             />
           </div>
-
           <div className="mt-4">
             <p className="mb-2 text-xs font-medium text-gray-600">Lignes du devis *</p>
-
             {/* En-têtes de colonnes — alignés avec la largeur exacte des champs en dessous */}
             <div className="mb-1 flex gap-2 px-0.5">
               <span className="flex-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
@@ -281,7 +274,6 @@ export function QuotesPage() {
               </span>
               {lines.length > 1 && <span className="w-6" />}
             </div>
-
             <div className="space-y-2">
               {lines.map((line, i) => (
                 <div key={i} className="flex gap-2">
@@ -329,7 +321,6 @@ export function QuotesPage() {
               + Ajouter une ligne
             </button>
           </div>
-
           <button
             onClick={() => createQuote.mutate()}
             disabled={!canSubmit}
@@ -346,7 +337,6 @@ export function QuotesPage() {
           )}
         </div>
       )}
-
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-md shadow-gray-200/60">
         {isLoading ? (
           <p className="px-5 py-8 text-center text-sm text-gray-400">Chargement...</p>
@@ -429,6 +419,8 @@ export function QuotesPage() {
                         {(quote.status === 'REJECTED' || quote.status === 'EXPIRED' || quote.status === 'CANCELLED') && (
                           <span className="text-xs text-gray-400">—</span>
                         )}
+
+                        <DeleteDocumentButton kind="quotes" id={quote.id} number={quote.number} />
                       </div>
                     </td>
                   </tr>

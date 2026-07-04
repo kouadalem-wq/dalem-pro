@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
 import { ReminderButton } from '../components/ReminderButton';
+import { DeleteDocumentButton } from '../components/DeleteDocumentButton';
 import {
   formatMoney,
   statusStyles,
@@ -219,6 +220,8 @@ export function InvoicesPage() {
                             </button>
                           )
                         )}
+
+                        <DeleteDocumentButton kind="invoices" id={invoice.id} number={invoice.number} />
                       </div>
                     </td>
                   </tr>

@@ -1,4 +1,4 @@
-﻿// src/quotes/quotes.service.ts
+// src/quotes/quotes.service.ts
 // Le calcul des totaux se fait TOUJOURS cote serveur, jamais cote client.
 // Un utilisateur malveillant pourrait sinon falsifier les montants envoyes.
 import {
@@ -81,7 +81,10 @@ export class QuotesService {
     resolvedLines: { totalPrice: number }[],
     taxRate: number,
   ) {
-    const subtotalAmount = resolvedLines.reduce((sum, l) => sum + l.totalPrice, 0);
+    const subtotalAmount = resolvedLines.reduce(
+      (sum, l) => sum + l.totalPrice,
+      0,
+    );
     const taxAmount = Math.round(subtotalAmount * (taxRate / 100));
     const totalAmount = subtotalAmount + taxAmount;
 
@@ -100,7 +103,9 @@ export class QuotesService {
       where: { id: dto.clientId, tenantId },
     });
     if (!client) {
-      throw new BadRequestException('Client introuvable pour cette entreprise.');
+      throw new BadRequestException(
+        'Client introuvable pour cette entreprise.',
+      );
     }
 
     const resolvedLines = await this.resolveLines(tenantId, dto.lines);
@@ -159,6 +164,7 @@ export class QuotesService {
 
   // Modification d'un devis : uniquement DRAFT ou SENT, jamais converti.
   // Les lignes sont remplacees integralement dans une transaction.
+  // Le client peut etre change tant que le devis est modifiable.
   async update(tenantId: string, id: string, dto: UpdateQuoteDto) {
     const quote = await this.findOne(tenantId, id);
 
@@ -180,7 +186,9 @@ export class QuotesService {
         where: { id: dto.clientId, tenantId },
       });
       if (!client) {
-        throw new BadRequestException('Client introuvable pour cette entreprise.');
+        throw new BadRequestException(
+          'Client introuvable pour cette entreprise.',
+        );
       }
       clientId = dto.clientId;
     }
@@ -219,7 +227,9 @@ export class QuotesService {
             dto.internalNotes !== undefined
               ? dto.internalNotes
               : quote.internalNotes,
-          validUntil: dto.validUntil ? new Date(dto.validUntil) : quote.validUntil,
+          validUntil: dto.validUntil
+            ? new Date(dto.validUntil)
+            : quote.validUntil,
           lines: {
             create: resolvedLines,
           },
@@ -227,6 +237,21 @@ export class QuotesService {
         include: { lines: true, client: true },
       });
     });
+  }
+
+  // Suppression d'un devis : interdite s'il a ete converti en facture
+  // (integrite comptable). Reservee aux OWNER/ADMIN cote controleur.
+  async remove(tenantId: string, id: string) {
+    const quote = await this.findOne(tenantId, id);
+
+    if (quote.convertedToInvoiceId) {
+      throw new BadRequestException(
+        'Ce devis a ete converti en facture et ne peut pas etre supprime.',
+      );
+    }
+
+    await this.prisma.quote.delete({ where: { id: quote.id } });
+    return { deleted: true };
   }
 
   async updateStatus(tenantId: string, id: string, dto: UpdateQuoteStatusDto) {
@@ -255,7 +280,9 @@ export class QuotesService {
     }
 
     if (quote.convertedToInvoiceId) {
-      throw new BadRequestException('Ce devis a deja ete converti en facture.');
+      throw new BadRequestException(
+        'Ce devis a deja ete converti en facture.',
+      );
     }
 
     const year = new Date().getFullYear();
