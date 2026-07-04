@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
 import { ReminderButton } from '../components/ReminderButton';
 import { DeleteDocumentButton } from '../components/DeleteDocumentButton';
+import { ActionsMenu } from '../components/ActionsMenu';
 import {
   formatMoney,
   statusStyles,
@@ -134,7 +135,7 @@ export function InvoicesPage() {
                 <th className="px-5 py-3 font-medium">Payé</th>
                 <th className="px-5 py-3 font-medium">Règlement</th>
                 <th className="px-5 py-3 font-medium">Statut</th>
-                <th className="px-5 py-3 font-medium">Actions</th>
+                <th className="px-5 py-3 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -170,12 +171,12 @@ export function InvoicesPage() {
                       </select>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[invoice.status]}`}>
+                      <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[invoice.status]}`}>
                         {statusLabels[invoice.status]}
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => handleDownloadPdf(invoice)}
                           disabled={downloadingId === invoice.id}
@@ -186,25 +187,6 @@ export function InvoicesPage() {
                         </button>
 
                         <ReminderButton invoice={invoice} />
-
-                        <button
-                          onClick={() => handleSendWhatsApp(invoice)}
-                          disabled={!invoice.client.phone}
-                          className="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
-                          title={invoice.client.phone ? 'Envoyer par WhatsApp' : "Le client n'a pas de téléphone enregistré"}
-                        >
-                          <span aria-hidden>💬</span> WhatsApp
-                        </button>
-
-                        <button
-                          onClick={() => sendByEmail.mutate(invoice.id)}
-                          disabled={!invoice.client.email || (sendByEmail.isPending && sendByEmail.variables === invoice.id)}
-                          className="flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          title={invoice.client.email ? 'Envoyer par email' : "Le client n'a pas d'email enregistré"}
-                        >
-                          <span aria-hidden>✉</span>{' '}
-                          {sendByEmail.isPending && sendByEmail.variables === invoice.id ? 'Envoi...' : 'Email'}
-                        </button>
 
                         {isPayable && (
                           payingInvoiceId === invoice.id ? (
@@ -261,13 +243,36 @@ export function InvoicesPage() {
                           )
                         )}
 
+                        <ActionsMenu
+                          actions={[
+                            {
+                              label: 'WhatsApp',
+                              icon: '💬',
+                              onClick: () => handleSendWhatsApp(invoice),
+                              disabled: !invoice.client.phone,
+                              title: invoice.client.phone
+                                ? 'Envoyer par WhatsApp'
+                                : "Le client n'a pas de téléphone enregistré",
+                            },
+                            {
+                              label: 'Email',
+                              icon: '✉',
+                              onClick: () => sendByEmail.mutate(invoice.id),
+                              disabled: !invoice.client.email,
+                              title: invoice.client.email
+                                ? 'Envoyer par email'
+                                : "Le client n'a pas d'email enregistré",
+                            },
+                          ]}
+                        />
+
                         <DeleteDocumentButton kind="invoices" id={invoice.id} number={invoice.number} />
                       </div>
                     </td>
                   </tr>
                   {emailFeedback?.invoiceId === invoice.id && (
                     <tr>
-                      <td colSpan={7} className="px-5 pb-2">
+                      <td colSpan={7} className="px-5 pb-2 text-right">
                         <p className={`text-xs ${emailFeedback.isError ? 'text-coral-500' : 'text-emerald-600'}`}>
                           {emailFeedback.isError ? '✕ ' : '✓ '}
                           {emailFeedback.message}

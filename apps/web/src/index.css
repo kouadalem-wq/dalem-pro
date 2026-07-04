@@ -7,25 +7,33 @@
   --color-ink-950: #0a0f0d;
   --color-ink-900: #0f1613;
   --color-ink-800: #16211c;
+
   --color-emerald-600: #0d9165;
   --color-emerald-500: #10a874;
   --color-emerald-400: #34c28f;
   --color-emerald-100: #d6f0e3;
   --color-emerald-50: #eaf7f0;
+
   --color-coral-500: #f2634a;
   --color-coral-400: #f5836d;
 
-  --font-display: "Sora", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, sans-serif;
+  /* Inter partout : titres et corps de texte.
+     Les graisses (500/600/700/800) differencient les titres du corps. */
+  --font-display: "Inter", system-ui, -apple-system, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
 }
 
 body {
   font-family: var(--font-body);
   background-color: #f7f8f7;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 h1, h2, h3, .font-display {
   font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
 
 @keyframes fade-slide-up {
