@@ -18,17 +18,27 @@ export function Layout({ title, subtitle, action, children }: LayoutProps) {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#eef1ee]">
+      {/* Halo vert principal — renforcé, confiné dans le coin haut-droit
+          (hors de la zone titre/sous-titre à gauche) */}
       <div
-        className="pointer-events-none absolute -right-32 -top-48 h-[40rem] w-[40rem] rounded-full opacity-[0.35] blur-3xl"
-        style={{ background: 'radial-gradient(circle, #0d9165 0%, transparent 65%)' }}
+        className="pointer-events-none absolute -right-32 -top-52 h-[44rem] w-[44rem] rounded-full opacity-[0.6] blur-3xl"
+        style={{ background: 'radial-gradient(circle, #0d9165 0%, transparent 70%)' }}
       />
+      {/* Halo encre — gauche, renforcé mais discret */}
       <div
-        className="pointer-events-none absolute -left-40 top-1/4 h-[28rem] w-[28rem] rounded-full opacity-[0.2] blur-3xl"
-        style={{ background: 'radial-gradient(circle, #0a0f0d 0%, transparent 65%)' }}
+        className="pointer-events-none absolute -left-44 top-1/3 h-[32rem] w-[32rem] rounded-full opacity-[0.32] blur-3xl"
+        style={{ background: 'radial-gradient(circle, #0a0f0d 0%, transparent 68%)' }}
       />
+      {/* Halo corail — bas-droit, renforcé */}
       <div
-        className="pointer-events-none absolute bottom-0 right-1/4 h-80 w-80 rounded-full opacity-[0.15] blur-3xl"
-        style={{ background: 'radial-gradient(circle, #f2634a 0%, transparent 70%)' }}
+        className="pointer-events-none absolute bottom-0 right-1/4 h-96 w-96 rounded-full opacity-[0.28] blur-3xl"
+        style={{ background: 'radial-gradient(circle, #f2634a 0%, transparent 72%)' }}
+      />
+      {/* Voile blanc léger en haut à gauche : protège le contraste du titre
+          et du sous-titre gris, sans effacer l'effet coloré */}
+      <div
+        className="pointer-events-none absolute -left-20 -top-20 h-[30rem] w-[30rem] rounded-full opacity-70 blur-3xl"
+        style={{ background: 'radial-gradient(circle, #f7f8f7 0%, transparent 60%)' }}
       />
 
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
