@@ -1,5 +1,4 @@
 // src/tenants/dto/update-tenant.dto.ts
-
 import { IsOptional, IsString, IsEnum } from 'class-validator';
 
 export enum PdfTemplateDto {
@@ -15,6 +14,10 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsString()
   logo?: string;
+
+  @IsOptional()
+  @IsString()
+  signature?: string;
 
   @IsOptional()
   @IsEnum(PdfTemplateDto, { message: 'Le template doit être MODERN ou CLASSIC.' })

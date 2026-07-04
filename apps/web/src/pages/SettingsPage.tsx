@@ -1,5 +1,4 @@
 // src/pages/SettingsPage.tsx
-
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -10,6 +9,7 @@ type Tenant = {
   id: string;
   name: string;
   logo: string | null;
+  signature: string | null;
   pdfTemplate: 'MODERN' | 'CLASSIC';
 };
 
@@ -32,7 +32,8 @@ const templates: {
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const signatureInputRef = useRef<HTMLInputElement>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<'MODERN' | 'CLASSIC'>('MODERN');
 
   const { data, isLoading } = useQuery<{ data: Tenant }>({
@@ -69,16 +70,40 @@ export function SettingsPage() {
     },
   });
 
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  // Upload de la signature : meme principe que le logo
+  const uploadSignature = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('signature', file);
+      return (
+        await api.post('/tenants/me/signature', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+      ).data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant-me'] });
+    },
+  });
+
+  function handleLogoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) {
       uploadLogo.mutate(file);
     }
-    // Réinitialise l'input pour permettre de re-sélectionner le même fichier plus tard
+    e.target.value = '';
+  }
+
+  function handleSignatureSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      uploadSignature.mutate(file);
+    }
     e.target.value = '';
   }
 
   const currentLogo = data?.data?.logo;
+  const currentSignature = data?.data?.signature;
 
   return (
     <Layout title="Paramètres" subtitle="Personnalisez l'apparence de vos documents">
@@ -86,9 +111,9 @@ export function SettingsPage() {
         <p className="text-sm text-gray-400">Chargement...</p>
       ) : (
         <div className="max-w-2xl space-y-6">
-          {(updateTemplate.isError || uploadLogo.isError) && (
+          {(updateTemplate.isError || uploadLogo.isError || uploadSignature.isError) && (
             <div className="rounded-lg bg-coral-500/10 px-3 py-2.5 text-sm text-coral-500">
-              {getErrorMessage(updateTemplate.error ?? uploadLogo.error)}
+              {getErrorMessage(updateTemplate.error ?? uploadLogo.error ?? uploadSignature.error)}
             </div>
           )}
           {updateTemplate.isSuccess && (
@@ -99,6 +124,11 @@ export function SettingsPage() {
           {uploadLogo.isSuccess && (
             <div className="rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700">
               Logo mis à jour avec succès.
+            </div>
+          )}
+          {uploadSignature.isSuccess && (
+            <div className="rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700">
+              Signature mise à jour avec succès.
             </div>
           )}
 
@@ -120,14 +150,14 @@ export function SettingsPage() {
 
               <div>
                 <input
-                  ref={fileInputRef}
+                  ref={logoInputRef}
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
-                  onChange={handleFileSelect}
+                  onChange={handleLogoSelect}
                   className="hidden"
                 />
                 <button
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => logoInputRef.current?.click()}
                   disabled={uploadLogo.isPending}
                   className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-50"
                 >
@@ -137,7 +167,47 @@ export function SettingsPage() {
             </div>
           </div>
 
-          {/* ─── Choix du template PDF ────────────────────────────── */}
+          {/* ─── Signature de l'entreprise ────────────────────────── */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-md shadow-gray-200/60">
+            <h2 className="font-display text-sm font-semibold text-ink-950">Signature de l'entreprise</h2>
+            <p className="mt-1 text-xs text-gray-500">
+              PNG, JPG ou WEBP — 2 Mo maximum. Elle apparaîtra en bas de vos devis et factures. Astuce : une image
+              avec fond transparent (PNG) rend le mieux.
+            </p>
+
+            <div className="mt-4 flex items-center gap-4">
+              <div className="flex h-20 w-40 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                {currentSignature ? (
+                  <img src={currentSignature} alt="Signature actuelle" className="h-full w-full object-contain" />
+                ) : (
+                  <span className="text-xs text-gray-400">Aucune signature</span>
+                )}
+              </div>
+
+              <div>
+                <input
+                  ref={signatureInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleSignatureSelect}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => signatureInputRef.current?.click()}
+                  disabled={uploadSignature.isPending}
+                  className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {uploadSignature.isPending
+                    ? 'Envoi en cours...'
+                    : currentSignature
+                      ? 'Changer la signature'
+                      : 'Ajouter une signature'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ─── Choix du template PDF ───────────────────────────── */}
           <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-md shadow-gray-200/60">
             <h2 className="font-display text-sm font-semibold text-ink-950">Modèle de document PDF</h2>
             <p className="mt-1 text-xs text-gray-500">

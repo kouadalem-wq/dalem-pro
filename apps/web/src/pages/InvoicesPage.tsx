@@ -23,8 +23,18 @@ type Invoice = {
   status: string;
   totalAmount: number;
   paidAmount: number;
+  paymentMethod: string | null;
   client: { name: string; email: string | null; phone: string | null };
 };
+
+// Options de moyen de reglement (memes valeurs que l'enum backend)
+const paymentMethodOptions: { value: string; label: string }[] = [
+  { value: 'CASH', label: 'Espèces' },
+  { value: 'MOBILE_MONEY', label: 'Mobile Money' },
+  { value: 'BANK_TRANSFER', label: 'Virement' },
+  { value: 'CHEQUE', label: 'Chèque' },
+  { value: 'OTHER', label: 'Autre' },
+];
 
 export function InvoicesPage() {
   const { tenant } = useAuth();
@@ -50,6 +60,15 @@ export function InvoicesPage() {
       setPayingInvoiceId(null);
       setPaymentAmount(0);
       setPaymentMethod('CASH');
+    },
+  });
+
+  // Met a jour le moyen de reglement affiche sur le PDF (sauvegarde immediate)
+  const updatePaymentMethod = useMutation({
+    mutationFn: async ({ invoiceId, method }: { invoiceId: string; method: string }) =>
+      (await api.patch(`/invoices/${invoiceId}/payment-method`, { paymentMethod: method })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
     },
   });
 
@@ -113,6 +132,7 @@ export function InvoicesPage() {
                 <th className="px-5 py-3 font-medium">Client</th>
                 <th className="px-5 py-3 font-medium">Total</th>
                 <th className="px-5 py-3 font-medium">Payé</th>
+                <th className="px-5 py-3 font-medium">Règlement</th>
                 <th className="px-5 py-3 font-medium">Statut</th>
                 <th className="px-5 py-3 font-medium">Actions</th>
               </tr>
@@ -129,6 +149,26 @@ export function InvoicesPage() {
                     <td className="px-5 py-3.5 text-gray-600">{invoice.client.name}</td>
                     <td className="px-5 py-3.5 text-gray-900">{formatMoney(invoice.totalAmount, currency)}</td>
                     <td className="px-5 py-3.5 text-gray-600">{formatMoney(invoice.paidAmount, currency)}</td>
+                    <td className="px-5 py-3.5">
+                      <select
+                        value={invoice.paymentMethod ?? ''}
+                        onChange={(e) =>
+                          updatePaymentMethod.mutate({ invoiceId: invoice.id, method: e.target.value })
+                        }
+                        disabled={updatePaymentMethod.isPending && updatePaymentMethod.variables?.invoiceId === invoice.id}
+                        className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 outline-none transition-colors hover:border-gray-300 focus:border-emerald-500 disabled:opacity-50"
+                        title="Moyen de règlement (apparaît sur le PDF)"
+                      >
+                        <option value="" disabled>
+                          À définir
+                        </option>
+                        {paymentMethodOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
                     <td className="px-5 py-3.5">
                       <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[invoice.status]}`}>
                         {statusLabels[invoice.status]}
@@ -227,7 +267,7 @@ export function InvoicesPage() {
                   </tr>
                   {emailFeedback?.invoiceId === invoice.id && (
                     <tr>
-                      <td colSpan={6} className="px-5 pb-2">
+                      <td colSpan={7} className="px-5 pb-2">
                         <p className={`text-xs ${emailFeedback.isError ? 'text-coral-500' : 'text-emerald-600'}`}>
                           {emailFeedback.isError ? '✕ ' : '✓ '}
                           {emailFeedback.message}

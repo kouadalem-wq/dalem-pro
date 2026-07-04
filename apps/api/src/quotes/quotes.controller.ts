@@ -101,6 +101,7 @@ export class QuotesController {
       currency: quote.currency,
       tenantName: quote.tenant.name,
       tenantLogoUrl: quote.tenant.logo,
+      tenantSignatureUrl: quote.tenant.signature,
       template: quote.tenant.pdfTemplate,
       clientName: quote.client.name,
       clientEmail: quote.client.email,

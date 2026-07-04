@@ -3,7 +3,9 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
+  Body,
   Param,
   UseGuards,
   Res,
@@ -14,6 +16,7 @@ import type { Response } from 'express';
 import { InvoicesService } from './invoices.service';
 import { PdfService } from '../pdf/pdf.service';
 import { MailService } from '../mail/mail.service';
+import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
@@ -37,6 +40,20 @@ export class InvoicesController {
   @Get(':id')
   async findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const invoice = await this.invoicesService.findOne(user.tenantId, id);
+    return { success: true, data: invoice };
+  }
+
+  @Patch(':id/payment-method')
+  async updatePaymentMethod(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdatePaymentMethodDto,
+  ) {
+    const invoice = await this.invoicesService.updatePaymentMethod(
+      user.tenantId,
+      id,
+      dto.paymentMethod,
+    );
     return { success: true, data: invoice };
   }
 
@@ -94,7 +111,9 @@ export class InvoicesController {
       currency: invoice.currency,
       tenantName: invoice.tenant.name,
       tenantLogoUrl: invoice.tenant.logo,
+      tenantSignatureUrl: invoice.tenant.signature,
       template: invoice.tenant.pdfTemplate,
+      paymentMethod: invoice.paymentMethod,
       clientName: invoice.client.name,
       clientEmail: invoice.client.email,
       clientPhone: invoice.client.phone,

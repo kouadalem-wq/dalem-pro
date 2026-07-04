@@ -29,6 +29,7 @@ model Tenant {
   phone       String?                             // Téléphone optionnel
   address     String?                             // Adresse physique
   logo        String?                             // URL du logo (S3/R2)
+  signature   String?                             // URL de la signature de l'entreprise (PDF)
   currency    String      @default("XOF")         // Devise par défaut (XOF = FCFA)
   country     String      @default("CI")          // Pays (ISO 3166-1 alpha-2)
   pdfTemplate PdfTemplate @default(MODERN)         // Template PDF choisi par l'entreprise
@@ -217,6 +218,7 @@ model Invoice {
   notes           String?
   internalNotes   String?
   dueDate         DateTime?
+  paymentMethod   PaymentMethod?
   paidAt          DateTime?
   fromQuoteId     String?
   createdAt       DateTime      @default(now())

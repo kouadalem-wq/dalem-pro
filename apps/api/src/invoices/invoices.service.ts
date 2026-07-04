@@ -29,6 +29,17 @@ export class InvoicesService {
     return invoice;
   }
 
+  // Met a jour le moyen de reglement souhaite (affiche sur le PDF)
+  async updatePaymentMethod(tenantId: string, id: string, paymentMethod: string) {
+    // Verifie que la facture appartient bien au tenant
+    await this.findOne(tenantId, id);
+    return this.prisma.invoice.update({
+      where: { id },
+      data: { paymentMethod: paymentMethod as any },
+      include: { client: true, lines: true, payments: true },
+    });
+  }
+
   // Suppression d'une facture : interdite si un paiement a ete enregistre
   // (integrite comptable - dans ce cas, il faut l'annuler, pas la supprimer).
   // Le devis d'origine est detache pour pouvoir etre reconverti si besoin.
@@ -42,7 +53,6 @@ export class InvoicesService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      // Detache le devis d'origine (il redevient convertible)
       await tx.quote.updateMany({
         where: { tenantId, convertedToInvoiceId: invoice.id },
         data: { convertedToInvoiceId: null },
