@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { getErrorMessage } from '../lib/errors';
 
 type Tenant = {
@@ -36,6 +37,23 @@ export function SettingsPage() {
   const signatureInputRef = useRef<HTMLInputElement>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<'MODERN' | 'CLASSIC'>('MODERN');
 
+  // Cible de la confirmation de suppression : un seul ConfirmDialog sert les deux cas.
+  const [confirmTarget, setConfirmTarget] = useState<'logo' | 'signature' | null>(null);
+
+  // Toast : message éphémère affiché en bas de l'écran, visible quelle que soit
+  // la position de défilement, et qui disparaît automatiquement après 3 secondes.
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  function showToast(message: string, type: 'success' | 'error') {
+    setToast({ message, type });
+  }
+
   const { data, isLoading } = useQuery<{ data: Tenant }>({
     queryKey: ['tenant-me'],
     queryFn: async () => (await api.get('/tenants/me')).data,
@@ -51,7 +69,9 @@ export function SettingsPage() {
     mutationFn: async () => (await api.patch('/tenants/me', { pdfTemplate: selectedTemplate })).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tenant-me'] });
+      showToast('Modèle enregistré avec succès.', 'success');
     },
+    onError: (err) => showToast(getErrorMessage(err), 'error'),
   });
 
   // Upload du logo : envoie le fichier en multipart/form-data
@@ -67,6 +87,23 @@ export function SettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tenant-me'] });
+      showToast('Logo mis à jour avec succès.', 'success');
+    },
+    onError: (err) => showToast(getErrorMessage(err), 'error'),
+  });
+
+  // Suppression du logo : on remet le champ a null cote Tenant.
+  // Le fichier reste sur Cloudinary mais n'est plus affiche ni utilise.
+  const removeLogo = useMutation({
+    mutationFn: async () => (await api.patch('/tenants/me', { logo: null })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant-me'] });
+      showToast('Logo supprimé.', 'success');
+      setConfirmTarget(null);
+    },
+    onError: (err) => {
+      showToast(getErrorMessage(err), 'error');
+      setConfirmTarget(null);
     },
   });
 
@@ -83,6 +120,22 @@ export function SettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tenant-me'] });
+      showToast('Signature mise à jour avec succès.', 'success');
+    },
+    onError: (err) => showToast(getErrorMessage(err), 'error'),
+  });
+
+  // Suppression de la signature : meme principe que le logo.
+  const removeSignature = useMutation({
+    mutationFn: async () => (await api.patch('/tenants/me', { signature: null })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant-me'] });
+      showToast('Signature supprimée.', 'success');
+      setConfirmTarget(null);
+    },
+    onError: (err) => {
+      showToast(getErrorMessage(err), 'error');
+      setConfirmTarget(null);
     },
   });
 
@@ -102,8 +155,18 @@ export function SettingsPage() {
     e.target.value = '';
   }
 
+  // Lance la bonne suppression selon la cible confirmee.
+  function handleConfirmDelete() {
+    if (confirmTarget === 'logo') {
+      removeLogo.mutate();
+    } else if (confirmTarget === 'signature') {
+      removeSignature.mutate();
+    }
+  }
+
   const currentLogo = data?.data?.logo;
   const currentSignature = data?.data?.signature;
+  const isDeleting = removeLogo.isPending || removeSignature.isPending;
 
   return (
     <Layout title="Paramètres" subtitle="Personnalisez l'apparence de vos documents">
@@ -111,34 +174,12 @@ export function SettingsPage() {
         <p className="text-sm text-gray-400">Chargement...</p>
       ) : (
         <div className="max-w-2xl space-y-6">
-          {(updateTemplate.isError || uploadLogo.isError || uploadSignature.isError) && (
-            <div className="rounded-lg bg-coral-500/10 px-3 py-2.5 text-sm text-coral-500">
-              {getErrorMessage(updateTemplate.error ?? uploadLogo.error ?? uploadSignature.error)}
-            </div>
-          )}
-          {updateTemplate.isSuccess && (
-            <div className="rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700">
-              Modèle enregistré avec succès.
-            </div>
-          )}
-          {uploadLogo.isSuccess && (
-            <div className="rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700">
-              Logo mis à jour avec succès.
-            </div>
-          )}
-          {uploadSignature.isSuccess && (
-            <div className="rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700">
-              Signature mise à jour avec succès.
-            </div>
-          )}
-
-          {/* ─── Logo de l'entreprise ─────────────────────────────── */}
+          {/* ─── Logo de l'entreprise ─────────────────────────────────── */}
           <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-md shadow-gray-200/60">
             <h2 className="font-display text-sm font-semibold text-ink-950">Logo de l'entreprise</h2>
             <p className="mt-1 text-xs text-gray-500">
               PNG, JPG ou WEBP — 2 Mo maximum. Il apparaîtra sur vos devis et factures.
             </p>
-
             <div className="mt-4 flex items-center gap-4">
               <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
                 {currentLogo ? (
@@ -147,8 +188,7 @@ export function SettingsPage() {
                   <span className="text-xs text-gray-400">Aucun logo</span>
                 )}
               </div>
-
-              <div>
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   ref={logoInputRef}
                   type="file"
@@ -163,18 +203,25 @@ export function SettingsPage() {
                 >
                   {uploadLogo.isPending ? 'Envoi en cours...' : currentLogo ? 'Changer le logo' : 'Ajouter un logo'}
                 </button>
+                {currentLogo && (
+                  <button
+                    onClick={() => setConfirmTarget('logo')}
+                    className="rounded-lg border border-coral-500/30 bg-white px-4 py-2 text-sm font-medium text-coral-500 shadow-sm transition-colors hover:bg-coral-500/10 disabled:opacity-50"
+                  >
+                    Supprimer
+                  </button>
+                )}
               </div>
             </div>
           </div>
 
-          {/* ─── Signature de l'entreprise ────────────────────────── */}
+          {/* ─── Signature de l'entreprise ─────────────────────────────── */}
           <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-md shadow-gray-200/60">
             <h2 className="font-display text-sm font-semibold text-ink-950">Signature de l'entreprise</h2>
             <p className="mt-1 text-xs text-gray-500">
               PNG, JPG ou WEBP — 2 Mo maximum. Elle apparaîtra en bas de vos devis et factures. Astuce : une image
               avec fond transparent (PNG) rend le mieux.
             </p>
-
             <div className="mt-4 flex items-center gap-4">
               <div className="flex h-20 w-40 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
                 {currentSignature ? (
@@ -183,8 +230,7 @@ export function SettingsPage() {
                   <span className="text-xs text-gray-400">Aucune signature</span>
                 )}
               </div>
-
-              <div>
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   ref={signatureInputRef}
                   type="file"
@@ -203,11 +249,19 @@ export function SettingsPage() {
                       ? 'Changer la signature'
                       : 'Ajouter une signature'}
                 </button>
+                {currentSignature && (
+                  <button
+                    onClick={() => setConfirmTarget('signature')}
+                    className="rounded-lg border border-coral-500/30 bg-white px-4 py-2 text-sm font-medium text-coral-500 shadow-sm transition-colors hover:bg-coral-500/10 disabled:opacity-50"
+                  >
+                    Supprimer
+                  </button>
+                )}
               </div>
             </div>
           </div>
 
-          {/* ─── Choix du template PDF ───────────────────────────── */}
+          {/* ─── Choix du template PDF ────────────────────────────────── */}
           <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-md shadow-gray-200/60">
             <h2 className="font-display text-sm font-semibold text-ink-950">Modèle de document PDF</h2>
             <p className="mt-1 text-xs text-gray-500">
@@ -253,6 +307,38 @@ export function SettingsPage() {
             >
               {updateTemplate.isPending ? 'Enregistrement...' : 'Enregistrer le modèle'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Confirmation de suppression (logo ou signature) ─────────── */}
+      {confirmTarget && (
+        <ConfirmDialog
+          title={confirmTarget === 'logo' ? 'Supprimer le logo ?' : 'Supprimer la signature ?'}
+          message={
+            confirmTarget === 'logo'
+              ? "Le logo ne s'affichera plus sur vos devis et factures. Vous pourrez en ajouter un nouveau à tout moment."
+              : "La signature ne s'affichera plus sur vos devis et factures. Vous pourrez en ajouter une nouvelle à tout moment."
+          }
+          confirmLabel="Supprimer"
+          variant="danger"
+          isLoading={isDeleting}
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setConfirmTarget(null)}
+        />
+      )}
+
+      {/* ─── Toast global (bas de l'écran, disparait apres 3s) ────────── */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 animate-fade-slide-up">
+          <div
+            className={`rounded-xl px-4 py-3 text-sm font-medium shadow-lg ${
+              toast.type === 'success'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-coral-500 text-white'
+            }`}
+          >
+            {toast.message}
           </div>
         </div>
       )}
