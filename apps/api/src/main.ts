@@ -7,10 +7,20 @@ import { join } from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
+  // ── Log de diagnostic (à retirer une fois le problème réglé) ──
+  // Affiche le host de DATABASE_URL tel que le process le reçoit,
+  // AVANT tout chargement de ConfigModule/dotenv. Mot de passe masqué.
+  const dbUrl = process.env.DATABASE_URL ?? 'NON DÉFINIE';
+  console.log(
+    'DATABASE_URL host:',
+    dbUrl.replace(/\/\/.*@/, '//***@').slice(0, 60),
+  );
+  console.log('PORT reçu de Render:', process.env.PORT ?? 'non défini');
+  // ──────────────────────────────────────────────────────────────
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  
- // Autorise le frontend à appeler l'API : localhost en dev, FRONTEND_URL en production
+  // Autorise le frontend à appeler l'API : localhost en dev, FRONTEND_URL en production
   const allowedOrigins = [
     'http://localhost:5173',
     process.env.FRONTEND_URL,
@@ -38,5 +48,6 @@ async function bootstrap() {
   );
 
   await app.listen(process.env.PORT ?? 3001, '0.0.0.0');
+  console.log('✅ API démarrée sur le port', process.env.PORT ?? 3001);
 }
 bootstrap();
