@@ -17,29 +17,42 @@ export function Layout({ title, subtitle, action, children }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#eef1ee]">
-      {/* Halo vert principal — renforcé, confiné dans le coin haut-droit
-          (hors de la zone titre/sous-titre à gauche) */}
-      <div
-        className="pointer-events-none absolute -right-32 -top-52 h-[44rem] w-[44rem] rounded-full opacity-[0.6] blur-3xl"
-        style={{ background: 'radial-gradient(circle, #0d9165 0%, transparent 70%)' }}
-      />
-      {/* Halo encre — gauche, renforcé mais discret */}
-      <div
-        className="pointer-events-none absolute -left-44 top-1/3 h-[32rem] w-[32rem] rounded-full opacity-[0.32] blur-3xl"
-        style={{ background: 'radial-gradient(circle, #0a0f0d 0%, transparent 68%)' }}
-      />
-      {/* Halo corail — bas-droit, renforcé */}
-      <div
-        className="pointer-events-none absolute bottom-0 right-1/4 h-96 w-96 rounded-full opacity-[0.28] blur-3xl"
-        style={{ background: 'radial-gradient(circle, #f2634a 0%, transparent 72%)' }}
-      />
-      {/* Voile blanc léger en haut à gauche : protège le contraste du titre
-          et du sous-titre gris, sans effacer l'effet coloré */}
-      <div
-        className="pointer-events-none absolute -left-20 -top-20 h-[30rem] w-[30rem] rounded-full opacity-70 blur-3xl"
-        style={{ background: 'radial-gradient(circle, #f7f8f7 0%, transparent 60%)' }}
-      />
+    // IMPORTANT : plus de `overflow-hidden` ici.
+    // Il coupait tout ce qui dépasse du conteneur — y compris les menus
+    // déroulants (bouton « … » des factures) et la sidebar.
+    <div className="relative min-h-screen bg-[#eef1ee]">
+
+      {/* Calque décoratif isolé : c'est LUI qui porte l'overflow-hidden.
+          Les halos restent confinés (pas de barre de défilement parasite),
+          mais le contenu de l'app n'est plus rogné. */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+
+        {/* Halo vert principal — renforcé, confiné dans le coin haut-droit
+            (hors de la zone titre/sous-titre à gauche) */}
+        <div
+          className="absolute -right-32 -top-52 h-[44rem] w-[44rem] rounded-full opacity-[0.6] blur-3xl"
+          style={{ background: 'radial-gradient(circle, #0d9165 0%, transparent 70%)' }}
+        />
+
+        {/* Halo encre — gauche, renforcé mais discret */}
+        <div
+          className="absolute -left-44 top-1/3 h-[32rem] w-[32rem] rounded-full opacity-[0.32] blur-3xl"
+          style={{ background: 'radial-gradient(circle, #0a0f0d 0%, transparent 68%)' }}
+        />
+
+        {/* Halo corail — bas-droit, renforcé */}
+        <div
+          className="absolute bottom-0 right-1/4 h-96 w-96 rounded-full opacity-[0.28] blur-3xl"
+          style={{ background: 'radial-gradient(circle, #f2634a 0%, transparent 72%)' }}
+        />
+
+        {/* Voile blanc léger en haut à gauche : protège le contraste du titre
+            et du sous-titre gris, sans effacer l'effet coloré */}
+        <div
+          className="absolute -left-20 -top-20 h-[30rem] w-[30rem] rounded-full opacity-70 blur-3xl"
+          style={{ background: 'radial-gradient(circle, #f7f8f7 0%, transparent 60%)' }}
+        />
+      </div>
 
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
