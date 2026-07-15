@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Plateforme de gestion pour PME africaines — devis, factures, paiements, stock",
   "scripts": {
-    "dev:api": "pnpm --filter api dev",
+    "dev:api": "pnpm --filter api start:dev",
     "dev:web": "pnpm --filter web dev",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",

@@ -1,9 +1,9 @@
 // src/pages/DashboardPage.tsx
-
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
+import { Lifeline } from '../components/Lifeline';
 import { formatMoney, statusStyles, statusLabels } from '../lib/format';
 
 type DashboardSummary = {
@@ -68,7 +68,14 @@ export function DashboardPage() {
   const summary = data?.data;
 
   return (
-    <Layout title={`Bonjour, ${user?.firstName} 👋`} subtitle={`Voici un aperçu de ${tenant?.name} aujourd'hui.`}>
+    <Layout
+      title={`Bonjour, ${user?.firstName} 👋`}
+      subtitle={`Voici un aperçu de ${tenant?.name} aujourd'hui.`}
+    >
+      {/* LA LIGNE DE VIE — l'information la plus importante, tout en haut.
+          Elle se charge indépendamment du reste du tableau de bord. */}
+      <Lifeline />
+
       {isLoading ? (
         <p className="text-sm text-gray-400">Chargement...</p>
       ) : summary ? (
@@ -101,15 +108,22 @@ export function DashboardPage() {
 
           <div className="mb-6 grid grid-cols-2 gap-4">
             <StatCard label="Clients actifs" value={String(summary.clientsCount)} delay={600} />
-            <StatCard label="Produits au catalogue" value={String(summary.productsCount)} delay={750} />
+            <StatCard
+              label="Produits au catalogue"
+              value={String(summary.productsCount)}
+              delay={750}
+            />
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-md shadow-gray-200/60">
             <div className="border-b border-gray-100 px-5 py-4">
               <h2 className="font-display text-sm font-semibold text-ink-950">Factures récentes</h2>
             </div>
+
             {summary.recentInvoices.length === 0 ? (
-              <p className="px-5 py-8 text-center text-sm text-gray-400">Aucune facture pour le moment.</p>
+              <p className="px-5 py-8 text-center text-sm text-gray-400">
+                Aucune facture pour le moment.
+              </p>
             ) : (
               <table className="w-full text-sm">
                 <thead>
@@ -130,7 +144,9 @@ export function DashboardPage() {
                       </td>
                       <td className="px-5 py-3.5">
                         <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[invoice.status] ?? statusStyles.DRAFT}`}
+                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                            statusStyles[invoice.status] ?? statusStyles.DRAFT
+                          }`}
                         >
                           {statusLabels[invoice.status] ?? invoice.status}
                         </span>

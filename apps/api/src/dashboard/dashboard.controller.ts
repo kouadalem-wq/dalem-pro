@@ -1,5 +1,4 @@
 // src/dashboard/dashboard.controller.ts
-
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -16,5 +15,12 @@ export class DashboardController {
   async getSummary(@CurrentUser() user: AuthUser) {
     const summary = await this.dashboardService.getSummary(user.tenantId);
     return { success: true, data: summary };
+  }
+
+  // Ligne de vie : combien de jours l'entreprise peut-elle tenir ?
+  @Get('lifeline')
+  async getLifeline(@CurrentUser() user: AuthUser) {
+    const lifeline = await this.dashboardService.getLifeline(user.tenantId);
+    return { success: true, data: lifeline };
   }
 }
