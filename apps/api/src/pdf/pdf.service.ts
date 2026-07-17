@@ -40,17 +40,12 @@ export class PdfService {
   // Injection du service QR (declare dans PdfModule)
   constructor(private readonly qrCodeService: QrCodeService) {}
 
- private formatMoney(cents: number, currency: string): string {
-    // Le stockage est toujours en centimes ; seul l'affichage s'adapte.
-    // Francs CFA et franc guineen n'ont pas de centimes.
-    const sansDecimale = ['XOF', 'XAF', 'GNF'];
-    const decimales = sansDecimale.includes(currency) ? 0 : 2;
+  private formatMoney(cents: number, currency: string): string {
     const amount = cents / 100;
     const formatted = new Intl.NumberFormat('fr-FR', {
       style: 'currency',
       currency,
-      minimumFractionDigits: decimales,
-      maximumFractionDigits: decimales,
+      maximumFractionDigits: currency === 'XOF' ? 0 : 2,
     }).format(amount);
     return formatted.replace(/[\u00A0\u202F]/g, ' ');
   }
@@ -115,7 +110,10 @@ export class PdfService {
     const ink = '#0a0f0d';
     const gray = '#6b7280';
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 50, size: 'A4' });
+      const doc = new PDFDocument({
+        size: 'A4',
+        margins: { top: 50, left: 50, right: 50, bottom: 20 },
+      });
       const chunks: Buffer[] = [];
       doc.on('data', (chunk) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -222,7 +220,7 @@ export class PdfService {
         } catch {}
       }
       doc.fontSize(8).fillColor(gray).font('Helvetica')
-        .text(`Document généré par Dalem_Pro — ${data.tenantName}`, 50, 775, { width: 495, align: 'center' });
+        .text(`Document généré par Dalem_Pro — ${data.tenantName}`, 50, 800, { width: 495, align: 'center' });
       doc.end();
     });
   }
@@ -238,7 +236,10 @@ export class PdfService {
     const black = '#000000';
     const darkGray = '#333333';
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 50, size: 'A4' });
+      const doc = new PDFDocument({
+        size: 'A4',
+        margins: { top: 50, left: 50, right: 50, bottom: 20 },
+      });
       const chunks: Buffer[] = [];
       doc.on('data', (chunk) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -345,7 +346,7 @@ export class PdfService {
         } catch {}
       }
       doc.fontSize(8).fillColor(darkGray).font('Times-Roman')
-        .text(data.tenantName, 50, 775, { width: 495, align: 'center' });
+        .text(data.tenantName, 50, 800, { width: 495, align: 'center' });
       doc.end();
     });
   }
