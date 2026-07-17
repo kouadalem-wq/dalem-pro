@@ -1,11 +1,19 @@
 // src/lib/format.ts
 
+// Devises sans centimes a l'affichage (0 decimale) : francs CFA et franc guineen.
+// Le stockage reste toujours en centimes (x100) quelle que soit la devise ;
+// seul l'affichage s'adapte.
+const DEVISES_SANS_DECIMALE = ['XOF', 'XAF', 'GNF'];
+
 export function formatMoney(cents: number, currency: string) {
   const amount = cents / 100;
+  const decimales = DEVISES_SANS_DECIMALE.includes(currency) ? 0 : 2;
+
   return new Intl.NumberFormat('fr-FR', {
     style: 'currency',
     currency,
-    maximumFractionDigits: currency === 'XOF' ? 0 : 2,
+    minimumFractionDigits: decimales,
+    maximumFractionDigits: decimales,
   }).format(amount);
 }
 
@@ -41,8 +49,8 @@ export const statusLabels: Record<string, string> = {
   EXPIRED: 'Expiré',
 };
 
-// Télécharge un PDF depuis l'API (le token est injecté automatiquement par
-// l'intercepteur axios) et déclenche le téléchargement dans le navigateur
+// Telecharge un PDF depuis l'API (le token est injecte automatiquement par
+// l'intercepteur axios) et declenche le telechargement dans le navigateur
 export async function downloadPdf(api: any, url: string, filename: string) {
   const response = await api.get(url, { responseType: 'blob' });
   const blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
@@ -55,12 +63,12 @@ export async function downloadPdf(api: any, url: string, filename: string) {
   window.URL.revokeObjectURL(blobUrl);
 }
 
-// Construit un lien wa.me pour envoyer un message WhatsApp pré-rempli.
+// Construit un lien wa.me pour envoyer un message WhatsApp pre-rempli.
 // Limite connue : WhatsApp ne permet pas de joindre un fichier via ce lien —
-// le commerçant doit télécharger le PDF puis l'attacher manuellement s'il
+// le commercant doit telecharger le PDF puis l'attacher manuellement s'il
 // veut l'envoyer avec le message.
 export function buildWhatsAppLink(phone: string, message: string): string {
-  // Garde uniquement les chiffres (wa.me exige le numéro sans espaces, tirets ni "+")
+  // Garde uniquement les chiffres (wa.me exige le numero sans espaces, tirets ni "+")
   const digitsOnly = phone.replace(/\D/g, '');
   const encodedMessage = encodeURIComponent(message);
   return `https://wa.me/${digitsOnly}?text=${encodedMessage}`;

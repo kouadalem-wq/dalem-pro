@@ -2,17 +2,16 @@
 // Genere un PDF pour un devis ou une facture, selon le template choisi par l'entreprise
 // Utilise pdfkit : leger, pas de navigateur headless necessaire
 import { Injectable } from '@nestjs/common';
+import { QrCodeService } from '../common/qrcode.service';
 // pdfkit n'a pas d'exports ES modules propres : import require necessaire
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const PDFDocument = require('pdfkit');
-
 type DocumentLine = {
   description: string;
   quantity: number | { toNumber: () => number };
   unitPrice: number;
   totalPrice: number;
 };
-
 type DocumentData = {
   type: 'DEVIS' | 'FACTURE';
   number: string;
@@ -34,20 +33,27 @@ type DocumentData = {
   createdAt: Date;
   validUntil?: Date | null;
   dueDate?: Date | null;
+  publicToken?: string | null;
 };
-
 @Injectable()
 export class PdfService {
-  private formatMoney(cents: number, currency: string): string {
+  // Injection du service QR (declare dans PdfModule)
+  constructor(private readonly qrCodeService: QrCodeService) {}
+
+ private formatMoney(cents: number, currency: string): string {
+    // Le stockage est toujours en centimes ; seul l'affichage s'adapte.
+    // Francs CFA et franc guineen n'ont pas de centimes.
+    const sansDecimale = ['XOF', 'XAF', 'GNF'];
+    const decimales = sansDecimale.includes(currency) ? 0 : 2;
     const amount = cents / 100;
     const formatted = new Intl.NumberFormat('fr-FR', {
       style: 'currency',
       currency,
-      maximumFractionDigits: currency === 'XOF' ? 0 : 2,
+      minimumFractionDigits: decimales,
+      maximumFractionDigits: decimales,
     }).format(amount);
     return formatted.replace(/[\u00A0\u202F]/g, ' ');
   }
-
   private formatDate(date: Date): string {
     return new Intl.DateTimeFormat('fr-FR', {
       day: '2-digit',
@@ -55,7 +61,6 @@ export class PdfService {
       year: 'numeric',
     }).format(date).replace(/[\u00A0\u202F]/g, ' ');
   }
-
   // Traduit l'enum PaymentMethod en libelle francais lisible
   private paymentMethodLabel(method?: string | null): string | null {
     if (!method) return null;
@@ -68,7 +73,6 @@ export class PdfService {
     };
     return labels[method] ?? null;
   }
-
   private async fetchImage(url: string): Promise<Buffer | null> {
     try {
       const response = await fetch(url);
@@ -79,24 +83,24 @@ export class PdfService {
       return null;
     }
   }
-
   private quantityToString(quantity: number | { toNumber: () => number }): string {
     return typeof quantity === 'number' ? String(quantity) : String(quantity.toNumber());
   }
-
   async generateDocument(data: DocumentData): Promise<Buffer> {
-    const [logoBuffer, signatureBuffer] = await Promise.all([
+    // Le QR est genere en parallele des images (logo, signature)
+    const [logoBuffer, signatureBuffer, qrBuffer] = await Promise.all([
       data.tenantLogoUrl ? this.fetchImage(data.tenantLogoUrl) : Promise.resolve(null),
       data.tenantSignatureUrl ? this.fetchImage(data.tenantSignatureUrl) : Promise.resolve(null),
+      data.publicToken
+        ? this.qrCodeService.generatePng(this.qrCodeService.buildVerificationUrl(data.publicToken))
+        : Promise.resolve(null),
     ]);
     const template = data.template ?? 'MODERN';
-
     if (template === 'CLASSIC') {
-      return this.generateClassic(data, logoBuffer, signatureBuffer);
+      return this.generateClassic(data, logoBuffer, signatureBuffer, qrBuffer);
     }
-    return this.generateModern(data, logoBuffer, signatureBuffer);
+    return this.generateModern(data, logoBuffer, signatureBuffer, qrBuffer);
   }
-
   // ════════════════════════════════════════════════════════════════════════════
   // TEMPLATE MODERNE — bandeau vert, couleurs de marque
   // ════════════════════════════════════════════════════════════════════════════
@@ -104,19 +108,18 @@ export class PdfService {
     data: DocumentData,
     logoBuffer: Buffer | null,
     signatureBuffer: Buffer | null,
+    qrBuffer: Buffer | null,
   ): Promise<Buffer> {
     const emerald = '#0d9165';
     const coral = '#f2634a';
     const ink = '#0a0f0d';
     const gray = '#6b7280';
-
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ margin: 50, size: 'A4' });
       const chunks: Buffer[] = [];
       doc.on('data', (chunk) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
-
       doc.rect(0, 0, 595, 8).fill(emerald);
       let headerTextX = 50;
       if (logoBuffer) {
@@ -171,7 +174,6 @@ export class PdfService {
       doc.fontSize(13).fillColor(emerald).font('Helvetica-Bold')
         .text('TOTAL', 350, totalsY, { width: 110, align: 'right' })
         .text(this.formatMoney(data.totalAmount, data.currency), 350, totalsY + 18, { width: 195, align: 'right' });
-
       // Boite de statut de paiement + moyen de reglement (factures)
       let leftBlockBottom = totalsY;
       if (data.type === 'FACTURE' && data.paidAmount !== undefined) {
@@ -185,7 +187,6 @@ export class PdfService {
         doc.fillColor(remaining > 0 ? coral : emerald).font('Helvetica-Bold')
           .text(this.formatMoney(remaining, data.currency), 64, boxY + 47, { width: 202, align: 'right' });
         leftBlockBottom = boxY + 68;
-
         const methodLabel = this.paymentMethodLabel(data.paymentMethod);
         if (methodLabel) {
           doc.fontSize(9).fillColor(gray).font('Helvetica')
@@ -194,7 +195,6 @@ export class PdfService {
           leftBlockBottom += 24;
         }
       }
-
       // Signature de l'entreprise (bas a droite)
       if (signatureBuffer) {
         const sigY = Math.max(leftBlockBottom + 20, totalsY + 70);
@@ -204,13 +204,28 @@ export class PdfService {
           doc.moveTo(400, sigY + 80).lineTo(545, sigY + 80).strokeColor('#d1d5db').lineWidth(0.5).stroke();
         } catch {}
       }
-
+      // Sceau de verification (bas a gauche) — cadre emeraude "Document certifie"
+      if (qrBuffer) {
+        const boxX = 50;
+        const boxY = 640;
+        const boxW = 150;
+        const boxH = 100;
+        try {
+          doc.roundedRect(boxX, boxY, boxW, boxH, 6).fillAndStroke('#e1f5ee', '#9fe1cb');
+          doc.fontSize(7).fillColor(emerald).font('Helvetica-Bold')
+            .text('\u2713 DOCUMENT CERTIFIÉ', boxX, boxY + 9, { width: boxW, align: 'center' });
+          const qrSize = 56;
+          doc.image(qrBuffer, boxX + (boxW - qrSize) / 2, boxY + 22, { width: qrSize });
+          doc.fontSize(6.5).fillColor(emerald).font('Helvetica')
+            .text('Scannez pour vérifier', boxX, boxY + 83, { width: boxW, align: 'center' })
+            .text("l'authenticité du document", boxX, boxY + 91, { width: boxW, align: 'center' });
+        } catch {}
+      }
       doc.fontSize(8).fillColor(gray).font('Helvetica')
-        .text(`Document généré par Dalem_Pro — ${data.tenantName}`, 50, 780, { width: 495, align: 'center' });
+        .text(`Document généré par Dalem_Pro — ${data.tenantName}`, 50, 775, { width: 495, align: 'center' });
       doc.end();
     });
   }
-
   // ════════════════════════════════════════════════════════════════════════════
   // TEMPLATE CLASSIQUE — noir et blanc, sobre, police Times-Roman
   // ════════════════════════════════════════════════════════════════════════════
@@ -218,17 +233,16 @@ export class PdfService {
     data: DocumentData,
     logoBuffer: Buffer | null,
     signatureBuffer: Buffer | null,
+    qrBuffer: Buffer | null,
   ): Promise<Buffer> {
     const black = '#000000';
     const darkGray = '#333333';
-
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ margin: 50, size: 'A4' });
       const chunks: Buffer[] = [];
       doc.on('data', (chunk) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
-
       let headerTextX = 50;
       if (logoBuffer) {
         try {
@@ -283,7 +297,6 @@ export class PdfService {
       doc.fontSize(13).fillColor(black).font('Times-Bold')
         .text('TOTAL', 350, totalsY, { width: 110, align: 'right' })
         .text(this.formatMoney(data.totalAmount, data.currency), 350, totalsY + 18, { width: 195, align: 'right' });
-
       let leftBlockBottom = totalsY;
       if (data.type === 'FACTURE' && data.paidAmount !== undefined) {
         const remaining = data.totalAmount - data.paidAmount;
@@ -296,7 +309,6 @@ export class PdfService {
         doc.fillColor(black).font('Times-Bold')
           .text(this.formatMoney(remaining, data.currency), 60, boxY + 45, { width: 200, align: 'right' });
         leftBlockBottom = boxY + 66;
-
         const methodLabel = this.paymentMethodLabel(data.paymentMethod);
         if (methodLabel) {
           doc.fontSize(9).fillColor(darkGray).font('Times-Roman')
@@ -305,7 +317,6 @@ export class PdfService {
           leftBlockBottom += 24;
         }
       }
-
       // Signature de l'entreprise (bas a droite)
       if (signatureBuffer) {
         const sigY = Math.max(leftBlockBottom + 20, totalsY + 70);
@@ -315,9 +326,26 @@ export class PdfService {
           doc.moveTo(400, sigY + 80).lineTo(545, sigY + 80).strokeColor(black).lineWidth(0.5).stroke();
         } catch {}
       }
-
+      // Sceau de verification (bas a gauche) — cadre double filet "Document certifie"
+      if (qrBuffer) {
+        const boxX = 50;
+        const boxY = 640;
+        const boxW = 150;
+        const boxH = 100;
+        try {
+          doc.rect(boxX, boxY, boxW, boxH).strokeColor(black).lineWidth(1).stroke();
+          doc.rect(boxX + 3, boxY + 3, boxW - 6, boxH - 6).strokeColor(darkGray).lineWidth(0.5).stroke();
+          doc.fontSize(7).fillColor(black).font('Times-Bold')
+            .text('DOCUMENT CERTIFIÉ', boxX, boxY + 10, { width: boxW, align: 'center' });
+          const qrSize = 54;
+          doc.image(qrBuffer, boxX + (boxW - qrSize) / 2, boxY + 22, { width: qrSize });
+          doc.fontSize(6.5).fillColor(darkGray).font('Times-Roman')
+            .text('Scannez pour vérifier', boxX, boxY + 82, { width: boxW, align: 'center' })
+            .text("l'authenticité du document", boxX, boxY + 90, { width: boxW, align: 'center' });
+        } catch {}
+      }
       doc.fontSize(8).fillColor(darkGray).font('Times-Roman')
-        .text(data.tenantName, 50, 780, { width: 495, align: 'center' });
+        .text(data.tenantName, 50, 775, { width: 495, align: 'center' });
       doc.end();
     });
   }

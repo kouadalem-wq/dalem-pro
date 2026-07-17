@@ -17,6 +17,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { UsersModule } from './users/users.module';
+import { VerificationModule } from './verification/verification.module';
 import { AssistantModule } from './assistant/assistant.module';
 
 @Module({
@@ -38,6 +39,7 @@ import { AssistantModule } from './assistant/assistant.module';
     NotificationsModule,
     UsersModule,
     AssistantModule,
+    VerificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

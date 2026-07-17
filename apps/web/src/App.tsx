@@ -17,6 +17,7 @@ import { TeamPage } from './pages/TeamPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { AssistantPage } from './pages/AssistantPage';
+import { VerificationPage } from './pages/VerificationPage';
 
 const queryClient = new QueryClient();
 
@@ -30,6 +31,7 @@ function App() {
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/verifier/:token" element={<VerificationPage />} />
             <Route
               path="/dashboard"
               element={

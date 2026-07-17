@@ -1,6 +1,5 @@
 // src/context/AuthContext.tsx
 // Gère l'état de connexion global : utilisateur courant, login, register, logout
-
 import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { api } from '../lib/api';
@@ -27,6 +26,7 @@ type AuthContextType = {
   login: (email: string, password: string) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => void;
+  refreshTenant: () => Promise<void>;
 };
 
 type RegisterData = {
@@ -50,7 +50,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const savedUser = localStorage.getItem('user');
     const savedTenant = localStorage.getItem('tenant');
     const token = localStorage.getItem('accessToken');
-
     if (savedUser && savedTenant && token) {
       setUser(JSON.parse(savedUser));
       setTenant(JSON.parse(savedTenant));
@@ -82,6 +81,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     saveSession(response.data.data);
   }
 
+  // Recharge les infos de l'entreprise depuis l'API et met a jour le state
+  // + le localStorage. A appeler apres un changement de devise, de nom, etc.,
+  // pour que toute l'app reflete la nouvelle valeur sans reconnexion.
+  async function refreshTenant() {
+    const response = await api.get('/tenants/me');
+    const freshTenant = response.data.data;
+    localStorage.setItem('tenant', JSON.stringify(freshTenant));
+    setTenant(freshTenant);
+  }
+
   function logout() {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
@@ -93,7 +102,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, tenant, isLoading, login, register, logout }}>
+    <AuthContext.Provider
+      value={{ user, tenant, isLoading, login, register, logout, refreshTenant }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -102,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth doit être utilisé à l\'intérieur de AuthProvider.');
+    throw new Error("useAuth doit être utilisé à l'intérieur de AuthProvider.");
   }
   return context;
 }

@@ -98,6 +98,7 @@ export class QuotesController {
     const pdfBuffer = await this.pdfService.generateDocument({
       type: 'DEVIS',
       number: quote.number,
+      publicToken: quote.publicToken,
       currency: quote.currency,
       tenantName: quote.tenant.name,
       tenantLogoUrl: quote.tenant.logo,

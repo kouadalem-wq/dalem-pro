@@ -34,6 +34,7 @@ model Tenant {
   currency    String      @default("XOF")         // Devise par défaut (XOF = FCFA)
   country     String      @default("CI")          // Pays (ISO 3166-1 alpha-2)
   pdfTemplate PdfTemplate @default(MODERN)         // Template PDF choisi par l'entreprise
+  soldeInitial Int         @default(0)             // Argent disponible au debut de l'activite (en centimes)
   isActive    Boolean     @default(true)           // Compte actif ou suspendu
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -148,6 +149,7 @@ enum QuoteStatus {
 
 model Quote {
   id              String      @id @default(uuid())
+  publicToken String @unique @default(cuid())
   tenantId        String
   clientId        String
   number          String
@@ -205,6 +207,7 @@ enum InvoiceStatus {
 
 model Invoice {
   id              String        @id @default(uuid())
+  publicToken String @unique @default(cuid())
   tenantId        String
   clientId        String
   number          String

@@ -105,9 +105,11 @@ export class InvoicesController {
   }
 
   private async buildPdf(invoice: any): Promise<Buffer> {
+   
     return this.pdfService.generateDocument({
       type: 'FACTURE',
       number: invoice.number,
+      publicToken: invoice.publicToken,
       currency: invoice.currency,
       tenantName: invoice.tenant.name,
       tenantLogoUrl: invoice.tenant.logo,
@@ -127,7 +129,6 @@ export class InvoicesController {
       dueDate: invoice.dueDate,
     });
   }
-
   private formatMoney(cents: number, currency: string): string {
     const amount = cents / 100;
     return new Intl.NumberFormat('fr-FR', {

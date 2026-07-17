@@ -108,6 +108,13 @@ export class QuotesService {
       );
     }
 
+    // La devise du devis suit TOUJOURS la devise actuelle de l'entreprise,
+    // et non une valeur envoyee par le frontend (qui pourrait etre obsolete).
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { currency: true },
+    });
+
     const resolvedLines = await this.resolveLines(tenantId, dto.lines);
     const taxRate = dto.taxRate ?? 0;
     const { subtotalAmount, taxAmount, totalAmount } = this.computeTotals(
@@ -122,7 +129,7 @@ export class QuotesService {
         tenantId,
         clientId: dto.clientId,
         number,
-        currency: dto.currency ?? 'XOF',
+        currency: tenant?.currency ?? 'XOF',
         subtotalAmount,
         taxAmount,
         totalAmount,
@@ -302,6 +309,7 @@ export class QuotesService {
           tenantId,
           clientId: quote.clientId,
           number: invoiceNumber,
+          // La facture herite de la devise du devis d'origine (coherent).
           currency: quote.currency,
           subtotalAmount: quote.subtotalAmount,
           taxAmount: quote.taxAmount,
