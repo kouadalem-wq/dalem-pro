@@ -1,45 +1,31 @@
 // src/components/BarcodeScanner.tsx
 // Fenetre modale de scan de code-barres via la camera.
-// Utilise @zxing/library, specialise dans les codes-barres 1D
-// (EAN-13, UPC, Code128...) — bien plus fiable que html5-qrcode pour le 1D.
-//
-// Note materielle : la lecture 1D par WEBCAM d'ordinateur reste difficile
-// (pas d'autofocus, faible resolution rapprochee). Sur TELEPHONE (autofocus)
-// ou avec une DOUCHETTE USB, c'est bien plus fiable. Ce composant fait au mieux.
+// Utilise @zxing/library. On laisse ZXing accepter TOUS les formats qu'il
+// connait (pas de restriction) : restreindre risquait d'exclure le format
+// exact des codes scannes. Mieux vaut tout accepter, quitte a etre moins cible.
 //
 // Contrainte navigateur : l'acces camera exige un contexte securise
 // (HTTPS ou localhost). En prod (Vercel HTTPS) et en local, c'est OK.
 import { useEffect, useRef, useState } from 'react';
-import {
-  BrowserMultiFormatReader,
-  DecodeHintType,
-  BarcodeFormat,
-} from '@zxing/library';
+import { BrowserMultiFormatReader, DecodeHintType } from '@zxing/library';
 
 type Props = {
   onDetected: (code: string) => void;
   onClose: () => void;
 };
 
-// Formats lineaires les plus repandus sur les produits.
-const FORMATS_1D = [
-  BarcodeFormat.EAN_13,
-  BarcodeFormat.EAN_8,
-  BarcodeFormat.UPC_A,
-  BarcodeFormat.UPC_E,
-  BarcodeFormat.CODE_128,
-  BarcodeFormat.CODE_39,
-];
-
 export function BarcodeScanner({ onDetected, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastAttempt, setLastAttempt] = useState<string>('');
   const doneRef = useRef(false);
 
   useEffect(() => {
+    // TRY_HARDER en temps reel est acceptable ici : on veut maximiser les
+    // chances de lecture, quitte a analyser un peu moins d'images par seconde.
     const hints = new Map();
-    hints.set(DecodeHintType.POSSIBLE_FORMATS, FORMATS_1D);
+    hints.set(DecodeHintType.TRY_HARDER, true);
 
     const reader = new BrowserMultiFormatReader(hints);
     readerRef.current = reader;
@@ -47,7 +33,14 @@ export function BarcodeScanner({ onDetected, onClose }: Props) {
 
     reader
       .decodeFromConstraints(
-        { video: { facingMode: 'environment' } },
+        {
+          video: {
+            facingMode: 'environment',
+            // On demande une resolution elevee : plus de pixels sur le code = meilleure lecture
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        },
         videoRef.current!,
         (result) => {
           if (cancelled || doneRef.current) return;
@@ -102,18 +95,18 @@ export function BarcodeScanner({ onDetected, onClose }: Props) {
           <div className="rounded-lg bg-coral-500/10 px-3 py-3 text-sm text-coral-500">{error}</div>
         ) : (
           <>
-            <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-900">
-              <video ref={videoRef} className="h-56 w-full object-cover" />
+            <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-gray-900">
+              <video ref={videoRef} className="h-64 w-full object-cover" />
+              {/* Ligne de visee : aide a centrer le code-barres */}
+              <div className="pointer-events-none absolute inset-x-6 top-1/2 h-0.5 -translate-y-1/2 bg-coral-500/70" />
             </div>
             <p className="mt-3 text-center text-xs text-gray-400">
-              Place le code-barres bien à plat dans le cadre, avec une bonne lumière.
+              Centre le code-barres sur la ligne rouge, bien à plat et net.
             </p>
-            {/* Aide : orienter l'utilisateur vers le canal le plus fiable selon son appareil */}
             <div className="mt-3 rounded-lg bg-gray-50 px-3 py-2.5">
               <p className="text-xs text-gray-500">
-                <span className="font-medium text-gray-600">Astuce :</span> sur ordinateur, une
-                douchette USB (ou la saisie manuelle) est plus fiable qu'une webcam. Sur téléphone,
-                la caméra fonctionne bien.
+                <span className="font-medium text-gray-600">Astuce :</span> approche puis éloigne
+                lentement le code jusqu'à la détection. Une douchette USB reste la plus fiable sur ordinateur.
               </p>
             </div>
           </>

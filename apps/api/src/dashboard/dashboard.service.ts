@@ -250,6 +250,11 @@ export class DashboardService {
     }
 
     return {
+      // Vrai si le compte n'a encore aucune activite : ni encaissement, ni
+      // depense, ni facture en attente. On ne compte PAS le solde initial
+      // (un solde saisi seul ne constitue pas une activite).
+      aucuneActivite:
+        totalEncaisse === 0 && totalDepense === 0 && evenements.length === 0,
       soldeActuel,
       rythmeQuotidien,
       revenuQuotidien,

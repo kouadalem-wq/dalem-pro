@@ -17,6 +17,7 @@ type Evenement = {
 };
 
 type LifelineData = {
+  aucuneActivite: boolean;
   soldeActuel: number;
   rythmeQuotidien: number;
   revenuQuotidien: number;
@@ -63,6 +64,39 @@ export function Lifeline() {
   }
 
   const d = data.data;
+
+  // Compte neuf sans aucune activite : on n'affiche pas de faux message
+  // rassurant, mais une invitation a demarrer.
+  if (d.aucuneActivite) {
+    return (
+      <section className="mb-6 animate-fade-slide-up rounded-2xl border border-gray-200 bg-white p-6 shadow-md shadow-gray-200/60">
+        <p className="text-sm text-gray-500">Ta ligne de vie</p>
+        <p className="mt-3 font-display text-2xl font-semibold text-ink-950">
+          Pas encore d'activité
+        </p>
+        <p className="mt-2 max-w-lg text-sm text-gray-500">
+          Commence par créer des factures et enregistrer tes dépenses. Ta ligne de vie
+          s'affichera dès que ton activité démarre, pour te montrer combien de temps ta
+          trésorerie peut tenir.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <a
+            href="/invoices"
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700"
+          >
+            Créer une facture
+          </a>
+          <a
+            href="/expenses"
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+          >
+            Enregistrer une dépense
+          </a>
+        </div>
+      </section>
+    );
+  }
+
   const enDanger = d.joursAutonomie !== null;
 
   // Remplissage de la jauge. Si une rupture est prevue, on la situe sur une
