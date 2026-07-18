@@ -3,7 +3,6 @@
 //
 // Parti pris : zéro jargon comptable. Une jauge (comme un réservoir d'essence),
 // une liste de ce qui arrive, et une courbe fine de l'activité passée.
-
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { formatMoney } from '../lib/format';
@@ -20,7 +19,9 @@ type Evenement = {
 type LifelineData = {
   soldeActuel: number;
   rythmeQuotidien: number;
-  joursAutonomie: number | null; // null = aucune rupture dans les 90 jours
+  revenuQuotidien: number;
+  fluxNetQuotidien: number;
+  joursAutonomie: number | null; // null = aucune rupture prevue (tresorerie saine)
   dateRupture: string | null;
   horizon: number;
   aEncaisser: number;
@@ -31,12 +32,24 @@ type LifelineData = {
 };
 
 const dateLongue = (iso: string) =>
-  new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+// Formate un nombre de jours en langage clair : jours, ou mois/annees si c'est long.
+function dureeLisible(jours: number): string {
+  if (jours < 60) return `${jours} jour${jours > 1 ? 's' : ''}`;
+  if (jours < 365) {
+    const mois = Math.round(jours / 30);
+    return `environ ${mois} mois`;
+  }
+  const annees = Math.floor(jours / 365);
+  const moisRestants = Math.round((jours % 365) / 30);
+  if (moisRestants === 0) return `plus de ${annees} an${annees > 1 ? 's' : ''}`;
+  return `environ ${annees} an${annees > 1 ? 's' : ''} et ${moisRestants} mois`;
+}
 
 export function Lifeline() {
   const { tenant } = useAuth();
   const currency = tenant?.currency ?? 'XOF';
-
   const { data, isLoading, isError } = useQuery<{ data: LifelineData }>({
     queryKey: ['dashboard-lifeline'],
     queryFn: async () => (await api.get('/dashboard/lifeline')).data,
@@ -52,9 +65,10 @@ export function Lifeline() {
   const d = data.data;
   const enDanger = d.joursAutonomie !== null;
 
-  // Remplissage de la jauge : plein si aucune rupture prévue
+  // Remplissage de la jauge. Si une rupture est prevue, on la situe sur une
+  // echelle de 90 jours (au-dela, la jauge est pleine mais le texte donne le vrai chiffre).
   const remplissage = enDanger
-    ? Math.max(4, Math.round((d.joursAutonomie! / d.horizon) * 100))
+    ? Math.min(100, Math.max(4, Math.round((d.joursAutonomie! / 90) * 100)))
     : 100;
 
   const couleurJauge = !enDanger
@@ -67,26 +81,36 @@ export function Lifeline() {
 
   return (
     <div className="mb-6 space-y-4">
-
       {/* ─── LA JAUGE ─── */}
       <section className="animate-fade-slide-up rounded-2xl border border-gray-200 bg-white p-6 shadow-md shadow-gray-200/60">
         <p className="text-sm text-gray-500">
           Avec l'argent que tu as et ce que tes clients doivent te payer, tu peux tenir :
         </p>
-
-        {enDanger ? (
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="font-display text-5xl font-semibold text-ink-950">
-              {d.joursAutonomie}
-            </span>
-            <span className="text-xl text-gray-500">
-              {d.joursAutonomie! > 1 ? 'jours' : 'jour'}
-            </span>
-          </div>
-        ) : (
+        {!enDanger ? (
           <p className="mt-3 font-display text-3xl font-semibold text-emerald-600">
-            Plus de {d.horizon} jours
+            Trésorerie saine — aucune rupture prévue
           </p>
+        ) : d.joursAutonomie! > 365 ? (
+          // Autonomie tres longue : un chiffre exact serait faussement precis.
+          // On rassure plutot que de compter les jours a 6 ans d'echeance.
+          <p className="mt-3 font-display text-3xl font-semibold text-emerald-600">
+            Trésorerie confortable
+          </p>
+        ) : (
+          // Moins d'un an : le nombre de jours est utile et actionnable.
+          <>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="font-display text-5xl font-semibold text-ink-950">
+                {d.joursAutonomie}
+              </span>
+              <span className="text-xl text-gray-500">
+                {d.joursAutonomie! > 1 ? 'jours' : 'jour'}
+              </span>
+            </div>
+            {d.joursAutonomie! >= 60 && (
+              <p className="mt-1 text-sm text-gray-400">Soit {dureeLisible(d.joursAutonomie!)}.</p>
+            )}
+          </>
         )}
 
         {/* Le réservoir */}
@@ -98,19 +122,31 @@ export function Lifeline() {
             aria-label={
               enDanger
                 ? `Autonomie de ${d.joursAutonomie} jours`
-                : `Autonomie supérieure à ${d.horizon} jours`
+                : 'Trésorerie saine, aucune rupture prévue'
             }
           />
         </div>
-
         <div className="mt-2 flex justify-between text-xs text-gray-400">
           <span>Aujourd'hui</span>
           <span>
-            {enDanger && d.dateRupture
+            {enDanger && d.joursAutonomie! <= 365 && d.dateRupture
               ? `${dateLongue(d.dateRupture)} — réservoir vide`
               : 'Aucun manque prévu'}
           </span>
         </div>
+
+        {/* Message de contexte : l'entreprise gagne ou perd de l'argent au quotidien ? */}
+        {d.fluxNetQuotidien >= 0 ? (
+          <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2.5 text-xs text-emerald-700">
+            À ton rythme actuel, tu encaisses plus que tu ne dépenses. Ta trésorerie se renforce
+            avec le temps.
+          </p>
+        ) : (
+          <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
+            À ton rythme actuel, tu dépenses un peu plus que tu n'encaisses. Surveille tes
+            rentrées d'argent pour rester serein.
+          </p>
+        )}
       </section>
 
       {/* ─── LES DEUX CHIFFRES ─── */}
@@ -129,7 +165,6 @@ export function Lifeline() {
             {d.nbFacturesDues} facture{d.nbFacturesDues > 1 ? 's' : ''} en attente
           </p>
         </div>
-
         <div
           className="animate-fade-slide-up rounded-2xl border border-gray-200 border-l-4 border-l-gray-200 bg-white p-5 shadow-md shadow-gray-200/60"
           style={{ animationDelay: '200ms' }}
@@ -156,7 +191,6 @@ export function Lifeline() {
               Ce qui arrive dans les prochaines semaines
             </h2>
           </div>
-
           <ul className="divide-y divide-gray-50">
             {d.prochainsEvenements.map((e, i) => (
               <li key={i} className="flex items-center gap-3 px-5 py-3.5">
@@ -177,7 +211,6 @@ export function Lifeline() {
                     <path d="M12 5v14M5 12l7 7 7-7" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </span>
-
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-ink-950">{e.libelle}</p>
                   <p className="text-xs text-gray-400">
@@ -188,7 +221,6 @@ export function Lifeline() {
                         : `Dans ${e.jour} jour${e.jour > 1 ? 's' : ''}`}
                   </p>
                 </div>
-
                 <span className="shrink-0 text-sm font-semibold text-emerald-600">
                   +{formatMoney(e.montant, currency)}
                 </span>
@@ -230,12 +262,10 @@ function CourbeEvolution({
   }
 
   const max = Math.max(1, ...data.map((d) => Math.max(d.encaisse, d.depense)));
-
   const x = (i: number) =>
     PAD.left + (i * (W - PAD.left - PAD.right)) / (data.length - 1);
   const y = (v: number) => PAD.top + (1 - v / max) * (H - PAD.top - PAD.bottom);
 
-  // Lissage par courbes de Bézier cubiques : rendu fin et fluide
   const chemin = (cle: 'encaisse' | 'depense') => {
     const pts = data.map((d, i) => [x(i), y(d[cle])] as const);
     let p = `M ${pts[0][0]} ${pts[0][1]}`;
@@ -268,7 +298,6 @@ function CourbeEvolution({
           <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
         </linearGradient>
       </defs>
-
       {paliers.map((v, i) => (
         <g key={i}>
           <line
@@ -285,7 +314,6 @@ function CourbeEvolution({
           </text>
         </g>
       ))}
-
       <path d={aire()} fill="url(#dp-lifeline-fill)" />
       <path
         d={chemin('depense')}
@@ -303,7 +331,6 @@ function CourbeEvolution({
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-
       {data.map((d, i) => (
         <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="11" fill="#9ca3af">
           {d.label}

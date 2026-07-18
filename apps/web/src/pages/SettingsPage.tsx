@@ -15,6 +15,7 @@ type Tenant = {
   pdfTemplate: 'MODERN' | 'CLASSIC';
   soldeInitial: number;
   currency: string;
+  signatureLabel: string | null;
 };
 
 const templates: {
@@ -46,6 +47,8 @@ export function SettingsPage() {
 
   // Devise selectionnee (code ISO)
   const [selectedCurrency, setSelectedCurrency] = useState<string>('XOF');
+  // Fonction du signataire (libelle sous la ligne de signature)
+  const [signatureLabel, setSignatureLabel] = useState<string>('');
 
   const [confirmTarget, setConfirmTarget] = useState<'logo' | 'signature' | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -72,6 +75,7 @@ export function SettingsPage() {
       const centimes = data.data.soldeInitial ?? 0;
       setSoldeFcfa(centimes > 0 ? String(Math.round(centimes / 100)) : '');
       setSelectedCurrency(data.data.currency ?? 'XOF');
+      setSignatureLabel(data.data.signatureLabel ?? '');
     }
   }, [data]);
 
@@ -110,6 +114,17 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['tenant-me'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-lifeline'] });
       showToast('Devise enregistrée.', 'success');
+    },
+    onError: (err) => showToast(getErrorMessage(err), 'error'),
+  });
+
+  // Enregistrement de la fonction du signataire
+  const updateSignatureLabel = useMutation({
+    mutationFn: async () =>
+      (await api.patch('/tenants/me', { signatureLabel: signatureLabel.trim() })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant-me'] });
+      showToast('Fonction du signataire enregistrée.', 'success');
     },
     onError: (err) => showToast(getErrorMessage(err), 'error'),
   });
@@ -374,6 +389,32 @@ export function SettingsPage() {
                     Supprimer
                   </button>
                 )}
+              </div>
+            </div>
+
+            {/* Fonction du signataire : libelle affiche sous la ligne de signature */}
+            <div className="mt-5 border-t border-gray-100 pt-4">
+              <label className="text-xs font-medium text-gray-700">Fonction du signataire</label>
+              <p className="mt-0.5 text-xs text-gray-400">
+                Le titre affiché sous la signature sur tes documents (ex. « Le gérant », « La directrice »).
+                Laisse vide pour n'afficher aucun titre.
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <input
+                  type="text"
+                  value={signatureLabel}
+                  onChange={(e) => setSignatureLabel(e.target.value)}
+                  placeholder="Le gérant"
+                  maxLength={40}
+                  className="w-64 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-ink-950 shadow-sm outline-none transition-colors focus:border-emerald-500"
+                />
+                <button
+                  onClick={() => updateSignatureLabel.mutate()}
+                  disabled={updateSignatureLabel.isPending}
+                  className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {updateSignatureLabel.isPending ? 'Enregistrement...' : 'Enregistrer'}
+                </button>
               </div>
             </div>
           </div>

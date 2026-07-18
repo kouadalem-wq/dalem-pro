@@ -34,6 +34,9 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsIn(DEVISES, { message: 'Devise non reconnue.' })
   currency?: string;
+  @IsOptional()
+  @IsString()
+  signatureLabel?: string;
 
   // Argent disponible au debut de l'activite (en centimes, entier positif)
   @IsOptional()

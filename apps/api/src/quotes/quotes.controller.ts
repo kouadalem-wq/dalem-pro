@@ -101,6 +101,7 @@ export class QuotesController {
       publicToken: quote.publicToken,
       currency: quote.currency,
       tenantName: quote.tenant.name,
+      signatureLabel: quote.tenant.signatureLabel,
       tenantLogoUrl: quote.tenant.logo,
       tenantSignatureUrl: quote.tenant.signature,
       template: quote.tenant.pdfTemplate,

@@ -6,12 +6,14 @@ import { QrCodeService } from '../common/qrcode.service';
 // pdfkit n'a pas d'exports ES modules propres : import require necessaire
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const PDFDocument = require('pdfkit');
+
 type DocumentLine = {
   description: string;
   quantity: number | { toNumber: () => number };
   unitPrice: number;
   totalPrice: number;
 };
+
 type DocumentData = {
   type: 'DEVIS' | 'FACTURE';
   number: string;
@@ -19,6 +21,7 @@ type DocumentData = {
   tenantName: string;
   tenantLogoUrl?: string | null;
   tenantSignatureUrl?: string | null;
+  signatureLabel?: string | null;
   template?: 'MODERN' | 'CLASSIC';
   clientName: string;
   clientEmail?: string | null;
@@ -35,20 +38,26 @@ type DocumentData = {
   dueDate?: Date | null;
   publicToken?: string | null;
 };
+
 @Injectable()
 export class PdfService {
   // Injection du service QR (declare dans PdfModule)
   constructor(private readonly qrCodeService: QrCodeService) {}
 
   private formatMoney(cents: number, currency: string): string {
+    // Le stockage est toujours en centimes ; seul l'affichage s'adapte.
+    const sansDecimale = ['XOF', 'XAF', 'GNF'];
+    const decimales = sansDecimale.includes(currency) ? 0 : 2;
     const amount = cents / 100;
     const formatted = new Intl.NumberFormat('fr-FR', {
       style: 'currency',
       currency,
-      maximumFractionDigits: currency === 'XOF' ? 0 : 2,
+      minimumFractionDigits: decimales,
+      maximumFractionDigits: decimales,
     }).format(amount);
     return formatted.replace(/[\u00A0\u202F]/g, ' ');
   }
+
   private formatDate(date: Date): string {
     return new Intl.DateTimeFormat('fr-FR', {
       day: '2-digit',
@@ -56,6 +65,7 @@ export class PdfService {
       year: 'numeric',
     }).format(date).replace(/[\u00A0\u202F]/g, ' ');
   }
+
   // Traduit l'enum PaymentMethod en libelle francais lisible
   private paymentMethodLabel(method?: string | null): string | null {
     if (!method) return null;
@@ -68,6 +78,7 @@ export class PdfService {
     };
     return labels[method] ?? null;
   }
+
   private async fetchImage(url: string): Promise<Buffer | null> {
     try {
       const response = await fetch(url);
@@ -78,9 +89,11 @@ export class PdfService {
       return null;
     }
   }
+
   private quantityToString(quantity: number | { toNumber: () => number }): string {
     return typeof quantity === 'number' ? String(quantity) : String(quantity.toNumber());
   }
+
   async generateDocument(data: DocumentData): Promise<Buffer> {
     // Le QR est genere en parallele des images (logo, signature)
     const [logoBuffer, signatureBuffer, qrBuffer] = await Promise.all([
@@ -96,6 +109,7 @@ export class PdfService {
     }
     return this.generateModern(data, logoBuffer, signatureBuffer, qrBuffer);
   }
+
   // ════════════════════════════════════════════════════════════════════════════
   // TEMPLATE MODERNE — bandeau vert, couleurs de marque
   // ════════════════════════════════════════════════════════════════════════════
@@ -193,14 +207,30 @@ export class PdfService {
           leftBlockBottom += 24;
         }
       }
-      // Signature de l'entreprise (bas a droite)
-      if (signatureBuffer) {
-        const sigY = Math.max(leftBlockBottom + 20, totalsY + 70);
-        try {
-          doc.fontSize(9).fillColor(gray).font('Helvetica').text('Signature', 400, sigY, { width: 145, align: 'center' });
-          doc.image(signatureBuffer, 400, sigY + 14, { fit: [145, 60], align: 'center' });
-          doc.moveTo(400, sigY + 80).lineTo(545, sigY + 80).strokeColor('#d1d5db').lineWidth(0.5).stroke();
-        } catch {}
+      // Bloc signature (bas a droite) — encadre, aligne sur la base du sceau,
+      // pour equilibrer la masse visuelle. Le cadre + la ligne restent visibles
+      // meme sans signature image (contresignature au stylo).
+      {
+        const sBoxX = 395;
+        const sBoxY = 640;
+        const sBoxW = 150;
+        const sBoxH = 100;
+        doc.roundedRect(sBoxX, sBoxY, sBoxW, sBoxH, 6).strokeColor('#e0e0e0').lineWidth(0.75).stroke();
+        doc.fontSize(8).fillColor(gray).font('Helvetica')
+          .text('Signature', sBoxX, sBoxY + 10, { width: sBoxW, align: 'center' });
+        if (signatureBuffer) {
+          try {
+            doc.image(signatureBuffer, sBoxX + 15, sBoxY + 24, { fit: [sBoxW - 30, 44], align: 'center' });
+          } catch {}
+        }
+        doc.moveTo(sBoxX + 15, sBoxY + 76).lineTo(sBoxX + sBoxW - 15, sBoxY + 76)
+          .strokeColor('#d1d5db').lineWidth(0.5).stroke();
+        // Fonction du signataire (parametrable ; rien si vide)
+        const label = data.signatureLabel?.trim();
+        if (label) {
+          doc.fontSize(7).fillColor(gray).font('Helvetica')
+            .text(label, sBoxX, sBoxY + 82, { width: sBoxW, align: 'center' });
+        }
       }
       // Sceau de verification (bas a gauche) — cadre emeraude "Document certifie"
       if (qrBuffer) {
@@ -219,11 +249,26 @@ export class PdfService {
             .text("l'authenticité du document", boxX, boxY + 91, { width: boxW, align: 'center' });
         } catch {}
       }
-      doc.fontSize(8).fillColor(gray).font('Helvetica')
-        .text(`Document généré par Dalem_Pro — ${data.tenantName}`, 50, 800, { width: 495, align: 'center' });
+      // Pied de page : texte centre encadre par deux filets lateraux sur la meme ligne
+      {
+        const footerText = `Document généré par Dalem_Pro — ${data.tenantName}`;
+        const footerY = 800;
+        doc.fontSize(8).fillColor(gray).font('Helvetica');
+        const textWidth = doc.widthOfString(footerText);
+        const pageCenter = 297.5;
+        const textLeft = pageCenter - textWidth / 2;
+        const textRight = pageCenter + textWidth / 2;
+        const lineY = footerY + 4;
+        const gap = 12;
+        doc.strokeColor('#9fe1cb').lineWidth(0.75);
+        doc.moveTo(70, lineY).lineTo(textLeft - gap, lineY).stroke();
+        doc.moveTo(textRight + gap, lineY).lineTo(525, lineY).stroke();
+        doc.fillColor(gray).text(footerText, 50, footerY, { width: 495, align: 'center' });
+      }
       doc.end();
     });
   }
+
   // ════════════════════════════════════════════════════════════════════════════
   // TEMPLATE CLASSIQUE — noir et blanc, sobre, police Times-Roman
   // ════════════════════════════════════════════════════════════════════════════
@@ -318,14 +363,27 @@ export class PdfService {
           leftBlockBottom += 24;
         }
       }
-      // Signature de l'entreprise (bas a droite)
-      if (signatureBuffer) {
-        const sigY = Math.max(leftBlockBottom + 20, totalsY + 70);
-        try {
-          doc.fontSize(9).fillColor(darkGray).font('Times-Roman').text('Signature', 400, sigY, { width: 145, align: 'center' });
-          doc.image(signatureBuffer, 400, sigY + 14, { fit: [145, 60], align: 'center' });
-          doc.moveTo(400, sigY + 80).lineTo(545, sigY + 80).strokeColor(black).lineWidth(0.5).stroke();
-        } catch {}
+      // Bloc signature (bas a droite) — encadre, aligne sur la base du sceau.
+      {
+        const sBoxX = 395;
+        const sBoxY = 640;
+        const sBoxW = 150;
+        const sBoxH = 100;
+        doc.roundedRect(sBoxX, sBoxY, sBoxW, sBoxH, 6).strokeColor('#999999').lineWidth(0.75).stroke();
+        doc.fontSize(8).fillColor(darkGray).font('Times-Roman')
+          .text('Signature', sBoxX, sBoxY + 10, { width: sBoxW, align: 'center' });
+        if (signatureBuffer) {
+          try {
+            doc.image(signatureBuffer, sBoxX + 15, sBoxY + 24, { fit: [sBoxW - 30, 44], align: 'center' });
+          } catch {}
+        }
+        doc.moveTo(sBoxX + 15, sBoxY + 76).lineTo(sBoxX + sBoxW - 15, sBoxY + 76)
+          .strokeColor(black).lineWidth(0.5).stroke();
+        const label = data.signatureLabel?.trim();
+        if (label) {
+          doc.fontSize(7).fillColor(darkGray).font('Times-Roman')
+            .text(label, sBoxX, sBoxY + 82, { width: sBoxW, align: 'center' });
+        }
       }
       // Sceau de verification (bas a gauche) — cadre double filet "Document certifie"
       if (qrBuffer) {
@@ -345,8 +403,22 @@ export class PdfService {
             .text("l'authenticité du document", boxX, boxY + 90, { width: boxW, align: 'center' });
         } catch {}
       }
-      doc.fontSize(8).fillColor(darkGray).font('Times-Roman')
-        .text(data.tenantName, 50, 800, { width: 495, align: 'center' });
+      // Pied de page : texte centre encadre par deux filets lateraux sur la meme ligne
+      {
+        const footerText = data.tenantName;
+        const footerY = 800;
+        doc.fontSize(8).fillColor(darkGray).font('Times-Roman');
+        const textWidth = doc.widthOfString(footerText);
+        const pageCenter = 297.5;
+        const textLeft = pageCenter - textWidth / 2;
+        const textRight = pageCenter + textWidth / 2;
+        const lineY = footerY + 4;
+        const gap = 12;
+        doc.strokeColor('#cccccc').lineWidth(0.75);
+        doc.moveTo(70, lineY).lineTo(textLeft - gap, lineY).stroke();
+        doc.moveTo(textRight + gap, lineY).lineTo(525, lineY).stroke();
+        doc.fillColor(darkGray).text(footerText, 50, footerY, { width: 495, align: 'center' });
+      }
       doc.end();
     });
   }

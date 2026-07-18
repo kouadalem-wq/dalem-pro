@@ -80,7 +80,7 @@ export class DashboardService {
 
     const debut6mois = new Date(today.getFullYear(), today.getMonth() - 5, 1);
 
-    const [tenant, encaisse, depense, depenses90j, facturesImpayees, paiements6mois, depenses6mois] =
+    const [tenant, encaisse, depense, depenses90j, encaisses90j, facturesImpayees, paiements6mois, depenses6mois] =
       await Promise.all([
         // 0. Le solde de depart saisi par l'entreprise (argent disponible debut activite)
         this.prisma.tenant.findUnique({
@@ -97,9 +97,14 @@ export class DashboardService {
           where: { tenantId },
           _sum: { amount: true },
         }),
-        // 3. Depenses des 90 derniers jours (pour le rythme)
+        // 3. Depenses des 90 derniers jours (pour le rythme de depense)
         this.prisma.expense.aggregate({
           where: { tenantId, date: { gte: depuis90j } },
+          _sum: { amount: true },
+        }),
+        // 3bis. Encaissements des 90 derniers jours (pour le rythme de revenu)
+        this.prisma.payment.aggregate({
+          where: { invoice: { tenantId }, paidAt: { gte: depuis90j } },
           _sum: { amount: true },
         }),
         // 4. Factures encore dues, avec leur echeance
@@ -133,6 +138,13 @@ export class DashboardService {
 
     // Rythme de depense quotidien (moyenne sur 90 jours)
     const rythmeQuotidien = Math.round((depenses90j._sum?.amount ?? 0) / 90);
+    // Rythme de revenu quotidien (moyenne des encaissements sur 90 jours).
+    // Permet une projection realiste : l'entreprise continue d'encaisser a son
+    // rythme habituel, au lieu de supposer zero revenu futur.
+    const revenuQuotidien = Math.round((encaisses90j._sum?.amount ?? 0) / 90);
+    // Flux net quotidien recurrent : ce que l'entreprise gagne (ou perd) chaque
+    // jour hors factures ponctuelles.
+    const fluxNetQuotidien = revenuQuotidien - rythmeQuotidien;
 
     // Les encaissements attendus : reste du, positionne a l'echeance.
     // Une facture sans echeance (ou deja echue) est placee a J+7 :
@@ -161,18 +173,46 @@ export class DashboardService {
       .filter((e): e is NonNullable<typeof e> => e !== null)
       .sort((a, b) => a.jour - b.jour);
 
-    // Simulation jour par jour
+    // Simulation jour par jour.
+    // Chaque jour : + revenu recurrent, - depense recurrente, + factures ponctuelles.
+    // On plafonne la COURBE affichee a HORIZON jours (lisibilite du graphe),
+    // mais le calcul de la rupture, lui, n'est PAS plafonne : on cherche le vrai
+    // jour de rupture meme au-dela de 90 jours.
     const courbe: number[] = [];
     let solde = soldeActuel;
     let jourRupture: number | null = null;
 
+    // Courbe affichee (bornee a l'horizon pour le graphe)
+    let soldeGraphe = soldeActuel;
     for (let j = 0; j <= HORIZON; j++) {
-      solde -= rythmeQuotidien;
+      soldeGraphe += fluxNetQuotidien;
+      for (const e of evenements) {
+        if (e.jour === j) soldeGraphe += e.montant;
+      }
+      courbe.push(soldeGraphe);
+    }
+
+    // Calcul precis de la rupture, sans plafond.
+    // Cas 1 : le flux net est positif ou nul ET aucune facture ne fait passer
+    //         le solde sous zero -> tresorerie saine, pas de rupture.
+    // Cas 2 : le flux net est negatif -> l'entreprise perd chaque jour ;
+    //         on simule jusqu'a ce que le solde atteigne zero.
+    // Limite de securite pour eviter une boucle infinie (~27 ans).
+    const MAX_JOURS = 10000;
+    for (let j = 0; j <= MAX_JOURS; j++) {
+      solde += fluxNetQuotidien;
       for (const e of evenements) {
         if (e.jour === j) solde += e.montant;
       }
-      courbe.push(solde);
-      if (jourRupture === null && solde < 0) jourRupture = j;
+      if (solde < 0) {
+        jourRupture = j;
+        break;
+      }
+      // Si le flux net est >= 0 et qu'on a depasse la derniere facture connue,
+      // le solde ne peut plus que monter : inutile de continuer.
+      if (fluxNetQuotidien >= 0 && j > (evenements[evenements.length - 1]?.jour ?? 0)) {
+        break;
+      }
     }
 
     let dateRupture: string | null = null;
@@ -212,6 +252,9 @@ export class DashboardService {
     return {
       soldeActuel,
       rythmeQuotidien,
+      revenuQuotidien,
+      fluxNetQuotidien,
+      // null = aucune rupture prevue (tresorerie saine)
       joursAutonomie: jourRupture,
       dateRupture,
       horizon: HORIZON,

@@ -45,4 +45,7 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   unit?: string; // Ex: "kg", "unité", "heure"
+  @IsOptional()
+  @IsString()
+  barcode?: string; // Code-barres (EAN/UPC ou reference libre)
 }

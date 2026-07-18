@@ -1,9 +1,9 @@
 // src/pages/ProductsPage.tsx
-
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
+import { BarcodeScanner } from '../components/BarcodeScanner';
 import { formatMoney } from '../lib/format';
 import { getErrorMessage } from '../lib/errors';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,7 @@ type Product = {
   unitPrice: number; // en centimes
   stockQuantity: number;
   unit: string;
+  barcode: string | null;
 };
 
 const emptyForm = {
@@ -25,15 +26,17 @@ const emptyForm = {
   unitPrice: 0, // saisi en unité principale (ex: 500), converti en centimes à l'envoi
   stockQuantity: 0,
   unit: 'unité',
+  barcode: '',
 };
 
 export function ProductsPage() {
   const { tenant } = useAuth();
   const currency = tenant?.currency ?? 'XOF';
   const queryClient = useQueryClient();
-
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  // Ouverture de la fenetre de scan camera
+  const [scanning, setScanning] = useState(false);
 
   // Ajustement de stock inline
   const [adjustingId, setAdjustingId] = useState<string | null>(null);
@@ -50,6 +53,8 @@ export function ProductsPage() {
         await api.post('/products', {
           ...form,
           unitPrice: Math.round(form.unitPrice * 100),
+          // On n'envoie pas un code-barres vide (null plutot que "")
+          barcode: form.barcode.trim() || undefined,
         })
       ).data,
     onSuccess: () => {
@@ -91,7 +96,6 @@ export function ProductsPage() {
               {getErrorMessage(createProduct.error)}
             </div>
           )}
-
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="text-xs font-medium text-gray-600">Nom *</label>
@@ -114,7 +118,6 @@ export function ProductsPage() {
               </select>
             </div>
           </div>
-
           <div className="mt-3">
             <label className="text-xs font-medium text-gray-600">Description (facultatif)</label>
             <input
@@ -122,6 +125,35 @@ export function ProductsPage() {
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
             />
+          </div>
+
+          {/* Code-barres : saisie manuelle, douchette (tape + Entree), ou scan camera */}
+          <div className="mt-3">
+            <label className="text-xs font-medium text-gray-600">Code-barres (facultatif)</label>
+            <div className="mt-1.5 flex gap-2">
+              <input
+                value={form.barcode}
+                onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+                onKeyDown={(e) => {
+                  // Une douchette USB finit par un "Entree" : on l'empeche de
+                  // soumettre quoi que ce soit, le code reste juste dans le champ.
+                  if (e.key === 'Enter') e.preventDefault();
+                }}
+                className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                placeholder="Scanne ou saisis le code"
+              />
+              <button
+                type="button"
+                onClick={() => setScanning(true)}
+                className="flex shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+                title="Scanner avec la caméra"
+              >
+                <span aria-hidden>📷</span> Scanner
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-gray-400">
+              Utilise la caméra, une douchette USB, ou saisis le code à la main.
+            </p>
           </div>
 
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -158,7 +190,6 @@ export function ProductsPage() {
               />
             </div>
           </div>
-
           <button
             onClick={() => createProduct.mutate()}
             disabled={createProduct.isPending || !form.name}
@@ -168,7 +199,6 @@ export function ProductsPage() {
           </button>
         </div>
       )}
-
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-md shadow-gray-200/60">
         {isLoading ? (
           <p className="px-5 py-8 text-center text-sm text-gray-400">Chargement...</p>
@@ -179,6 +209,7 @@ export function ProductsPage() {
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
                 <th className="px-5 py-3 font-medium">Nom</th>
+                <th className="px-5 py-3 font-medium">Code-barres</th>
                 <th className="px-5 py-3 font-medium">Type</th>
                 <th className="px-5 py-3 font-medium">Prix</th>
                 <th className="px-5 py-3 font-medium">Stock</th>
@@ -189,6 +220,13 @@ export function ProductsPage() {
               {products.map((product) => (
                 <tr key={product.id} className="border-t border-gray-50">
                   <td className="px-5 py-3.5 font-medium text-ink-950">{product.name}</td>
+                  <td className="px-5 py-3.5 text-gray-500">
+                    {product.barcode ? (
+                      <span className="font-mono text-xs">{product.barcode}</span>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3.5 text-gray-600">
                     {product.type === 'PRODUCT' ? 'Produit' : 'Service'}
                   </td>
@@ -244,6 +282,17 @@ export function ProductsPage() {
           </table>
         )}
       </div>
+
+      {/* Fenetre de scan camera */}
+      {scanning && (
+        <BarcodeScanner
+          onDetected={(code) => {
+            setForm((f) => ({ ...f, barcode: code }));
+            setScanning(false);
+          }}
+          onClose={() => setScanning(false)}
+        />
+      )}
     </Layout>
   );
 }

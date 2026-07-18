@@ -15,13 +15,21 @@ import {
 import { getErrorMessage } from '../lib/errors';
 import { useAuth } from '../context/AuthContext';
 
+type QuoteLineFull = {
+  description: string;
+  quantity: number | string;
+  unitPrice: number;
+};
+
 type Quote = {
   id: string;
   number: string;
   status: string;
   totalAmount: number;
+  taxRate: number;
   convertedToInvoiceId: string | null;
-  client: { name: string; phone: string | null };
+  client: { id?: string; name: string; phone: string | null };
+  lines?: { description: string; quantity: number | string; unitPrice: number }[];
 };
 
 type Client = { id: string; name: string };
@@ -39,11 +47,19 @@ function getNextAction(status: string): { label: string; nextStatus: string } | 
   }
 }
 
+// Un devis est modifiable tant qu'il est en brouillon ou envoye,
+// et pas encore converti en facture (aligne sur la regle du backend).
+function isEditable(quote: Quote): boolean {
+  return (
+    (quote.status === 'DRAFT' || quote.status === 'SENT') &&
+    !quote.convertedToInvoiceId
+  );
+}
+
 export function QuotesPage() {
   const { tenant } = useAuth();
   const currency = tenant?.currency ?? 'XOF';
   const queryClient = useQueryClient();
-
   const [showForm, setShowForm] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('new');
@@ -54,6 +70,9 @@ export function QuotesPage() {
   const [taxRate, setTaxRate] = useState(0);
   const [lines, setLines] = useState<QuoteLine[]>([{ description: '', quantity: 1, unitPrice: 0 }]);
 
+  // Mode edition : si non-null, le formulaire modifie ce devis au lieu d'en creer un.
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const { data: quotesData, isLoading } = useQuery<{ data: Quote[] }>({
     queryKey: ['quotes'],
     queryFn: async () => (await api.get('/quotes')).data,
@@ -63,6 +82,19 @@ export function QuotesPage() {
     queryKey: ['clients'],
     queryFn: async () => (await api.get('/clients')).data,
   });
+
+  // Remet le formulaire a zero et le ferme
+  function resetForm() {
+    setClientId('');
+    setNewClientName('');
+    setNewClientEmail('');
+    setNewClientPhone('');
+    setClientMode('new');
+    setTaxRate(0);
+    setLines([{ description: '', quantity: 1, unitPrice: 0 }]);
+    setEditingId(null);
+    setShowForm(false);
+  }
 
   const createQuote = useMutation({
     mutationFn: async () => {
@@ -86,16 +118,64 @@ export function QuotesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['quotes'] });
       queryClient.invalidateQueries({ queryKey: ['clients'] });
-      setClientId('');
-      setNewClientName('');
-      setNewClientEmail('');
-      setNewClientPhone('');
-      setClientMode('new');
-      setTaxRate(0);
-      setLines([{ description: '', quantity: 1, unitPrice: 0 }]);
-      setShowForm(false);
+      resetForm();
     },
   });
+
+  // Modification d'un devis existant (mode edition).
+  const editQuote = useMutation({
+    mutationFn: async () => {
+      let finalClientId = clientId;
+      if (clientMode === 'new') {
+        const clientRes = await api.post('/clients', {
+          name: newClientName,
+          email: newClientEmail || undefined,
+          phone: newClientPhone || undefined,
+        });
+        finalClientId = clientRes.data.data.id;
+      }
+      return (
+        await api.patch(`/quotes/${editingId}`, {
+          clientId: finalClientId,
+          taxRate,
+          lines: lines.map((l) => ({ ...l, unitPrice: Math.round(l.unitPrice * 100) })),
+        })
+      ).data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      resetForm();
+    },
+  });
+
+  // Ouvre le formulaire pre-rempli avec les donnees du devis a modifier.
+  function startEdit(quote: Quote) {
+    setEditingId(quote.id);
+    // On passe en mode "client existant" pointant sur le client du devis.
+    if (quote.client.id) {
+      setClientMode('existing');
+      setClientId(quote.client.id);
+    } else {
+      setClientMode('new');
+      setNewClientName(quote.client.name);
+    }
+    setTaxRate(Number(quote.taxRate) || 0);
+    // Les prix sont stockes en centimes : on reconvertit en unite pour l'affichage.
+    const editableLines: QuoteLine[] = (quote.lines ?? []).map((l) => ({
+      description: l.description,
+      quantity: Number(l.quantity),
+      unitPrice: l.unitPrice / 100,
+    }));
+    setLines(
+      editableLines.length > 0
+        ? editableLines
+        : [{ description: '', quantity: 1, unitPrice: 0 }],
+    );
+    setShowForm(true);
+    // Remonte en haut pour voir le formulaire
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   // Change le statut d'un devis (Envoyer, Marquer accepté, Marquer refusé)
   const updateStatus = useMutation({
@@ -151,9 +231,11 @@ export function QuotesPage() {
 
   const quotes = quotesData?.data ?? [];
   const clients = clientsData?.data ?? [];
+  const isEditMode = editingId !== null;
+  const activeMutation = isEditMode ? editQuote : createQuote;
   const isClientValid = clientMode === 'existing' ? !!clientId : newClientName.trim().length > 0;
-  const isLinesValid = lines.every((l) => l.description.trim() && l.quantity > 0 && l.unitPrice >= 0);
-  const canSubmit = isClientValid && isLinesValid && !createQuote.isPending;
+  const isLinesValid = lines.every((l) => l.description.trim() && Number(l.quantity) > 0 && l.unitPrice >= 0);
+  const canSubmit = isClientValid && isLinesValid && !activeMutation.isPending;
 
   return (
     <Layout
@@ -161,7 +243,7 @@ export function QuotesPage() {
       subtitle={`${quotes.length} devis créé${quotes.length > 1 ? 's' : ''}`}
       action={
         <button
-          onClick={() => setShowForm((v) => !v)}
+          onClick={() => (showForm ? resetForm() : setShowForm(true))}
           className="rounded-lg bg-ink-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-600"
         >
           {showForm ? 'Annuler' : '+ Nouveau devis'}
@@ -170,9 +252,14 @@ export function QuotesPage() {
     >
       {showForm && (
         <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-md shadow-gray-200/60">
-          {createQuote.isError && (
+          {isEditMode && (
+            <div className="mb-4 rounded-lg bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700">
+              Modification d'un devis existant
+            </div>
+          )}
+          {activeMutation.isError && (
             <div className="mb-4 rounded-lg bg-coral-500/10 px-3 py-2.5 text-sm text-coral-500">
-              {getErrorMessage(createQuote.error)}
+              {getErrorMessage(activeMutation.error)}
             </div>
           )}
           <div className="mb-4 flex gap-2">
@@ -261,7 +348,6 @@ export function QuotesPage() {
           </div>
           <div className="mt-4">
             <p className="mb-2 text-xs font-medium text-gray-600">Lignes du devis *</p>
-            {/* En-têtes de colonnes — alignés avec la largeur exacte des champs en dessous */}
             <div className="mb-1 flex gap-2 px-0.5">
               <span className="flex-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
                 Description
@@ -321,14 +407,28 @@ export function QuotesPage() {
               + Ajouter une ligne
             </button>
           </div>
-          <button
-            onClick={() => createQuote.mutate()}
-            disabled={!canSubmit}
-            className="mt-5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
-          >
-            {createQuote.isPending ? 'Création...' : 'Créer le devis'}
-          </button>
-          {!canSubmit && !createQuote.isPending && (
+          <div className="mt-5 flex items-center gap-2">
+            <button
+              onClick={() => (isEditMode ? editQuote.mutate() : createQuote.mutate())}
+              disabled={!canSubmit}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {activeMutation.isPending
+                ? 'Enregistrement...'
+                : isEditMode
+                  ? 'Enregistrer les modifications'
+                  : 'Créer le devis'}
+            </button>
+            {isEditMode && (
+              <button
+                onClick={resetForm}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+              >
+                Annuler
+              </button>
+            )}
+          </div>
+          {!canSubmit && !activeMutation.isPending && (
             <p className="mt-2 text-xs text-gray-400">
               {!isClientValid
                 ? 'Indiquez un nom de client.'
@@ -384,6 +484,15 @@ export function QuotesPage() {
                         >
                           <span aria-hidden>💬</span> WhatsApp
                         </button>
+                        {isEditable(quote) && (
+                          <button
+                            onClick={() => startEdit(quote)}
+                            className="flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+                            title="Modifier ce devis"
+                          >
+                            <span aria-hidden>✎</span> Modifier
+                          </button>
+                        )}
                         {nextAction && (
                           <button
                             onClick={() => updateStatus.mutate({ id: quote.id, status: nextAction.nextStatus })}
@@ -419,7 +528,6 @@ export function QuotesPage() {
                         {(quote.status === 'REJECTED' || quote.status === 'EXPIRED' || quote.status === 'CANCELLED') && (
                           <span className="text-xs text-gray-400">—</span>
                         )}
-
                         <DeleteDocumentButton kind="quotes" id={quote.id} number={quote.number} />
                       </div>
                     </td>

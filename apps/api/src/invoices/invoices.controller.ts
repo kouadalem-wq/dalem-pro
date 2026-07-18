@@ -96,6 +96,7 @@ export class InvoicesController {
       clientEmail: invoice.client.email,
       clientName: invoice.client.name,
       tenantName: invoice.tenant.name,
+      
       documentType: 'facture',
       number: invoice.number,
       amount: this.formatMoney(invoice.totalAmount, invoice.currency),
@@ -112,6 +113,7 @@ export class InvoicesController {
       publicToken: invoice.publicToken,
       currency: invoice.currency,
       tenantName: invoice.tenant.name,
+      signatureLabel: invoice.tenant.signatureLabel,
       tenantLogoUrl: invoice.tenant.logo,
       tenantSignatureUrl: invoice.tenant.signature,
       template: invoice.tenant.pdfTemplate,
