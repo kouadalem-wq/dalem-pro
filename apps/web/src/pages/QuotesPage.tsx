@@ -15,12 +15,6 @@ import {
 import { getErrorMessage } from '../lib/errors';
 import { useAuth } from '../context/AuthContext';
 
-type QuoteLineFull = {
-  description: string;
-  quantity: number | string;
-  unitPrice: number;
-};
-
 type Quote = {
   id: string;
   number: string;
